@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def serve():
-    # Never load a developer's .env or contact real connectors/Bugsnag.
+    # Never load a developer's .env or contact real connectors.
     from types import ModuleType
     env = ModuleType("env")
     env.DB = {"provider": "sqlite"}
@@ -29,7 +29,6 @@ def serve():
         for name in ("baserow", "sendgrid", "pdf")
     }
     env.SYSTEM_VARS = {}
-    env.BUGSNAG = {"api_key": ""}
     sys.modules["env"] = env
     sys.path.insert(0, str(ROOT))
     import asyncio

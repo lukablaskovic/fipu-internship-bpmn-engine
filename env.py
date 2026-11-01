@@ -17,4 +17,3 @@ DS = {
     "sendgrid": {"type": "http-connector", "url": os.getenv("SENDGRID_CONNECTOR_URL")},
     "pdf": {"type": "http-connector", "url": os.getenv("PDF_CONNECTOR_URL")},
 }
-BUGSNAG = {"api_key": os.getenv("BUGSNAG")}
