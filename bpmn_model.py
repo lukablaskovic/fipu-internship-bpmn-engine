@@ -205,7 +205,6 @@ class BpmnInstance:
                 queue.append(in_queue.get_nowait())
             # print("Check", _id, id(queue), id(in_queue))
 
-            exit = False
             can_continue = False
 
             message = queue[0] if queue else None
@@ -218,20 +217,6 @@ class BpmnInstance:
             for idx, current in enumerate(self.pending):
                 # Helper variables dict
                 before_variables = deepcopy(self.variables)
-
-                if isinstance(current, EndEvent):
-                    exit = True
-                    del self.pending[idx]
-                    # Add EndEvent to DB
-                    db_connector.add_event(
-                        model_name=self.model.model_path,
-                        instance_id=self._id,
-                        activity_id=current._id,
-                        timestamp=datetime.now(),
-                        pending=[],
-                        activity_variables={},
-                    )
-                    break
 
                 if isinstance(current, UserTask):
                     if not (message and isinstance(message, UserFormMessage)
@@ -262,9 +247,6 @@ class BpmnInstance:
                     del self.pending[idx]
                     break
 
-            if exit:
-                break
-
             default = current.default if isinstance(current, ExclusiveGateway) else None
 
             if can_continue:
@@ -283,6 +265,8 @@ class BpmnInstance:
                                 next_tasks.append(elements[sequence.target])
                         else:
                             next_tasks.append(elements[sequence.target])
+                        if isinstance(current, ExclusiveGateway) and next_tasks:
+                            break
 
                     if not next_tasks and default_fallback:
                         log("\t- going down default path...")

@@ -1,5 +1,38 @@
 # A python module for parsing and executing BPMN models
 
+## FIPU execution profile
+
+The shipped internship models use standard BPMN 2.0 model/diagram XML and the
+`urn:fipu:bpmn:1` extension namespace. Praksa BPMN Studio edits this profile without
+Camunda libraries. This is a limited execution profile, not full BPMN conformance.
+
+Forms use `fipu:formData` / `fipu:formField`; connectors use
+`fipu:connector` / `fipu:connectorId`, and task/connector input-output mappings use
+`fipu:inputOutput`. Parameter values can be text, `fipu:list` of `fipu:value`, or
+`fipu:map` of `fipu:entry key="..."`. `${variable}` substitutions retain the
+existing engine behavior. Output parameter names select top-level JSON response
+keys; output expressions are not evaluated. User-task input/output extensions
+are preserved by the editor but only declared form fields are accepted by the
+engine. Gateway conditions use exact `key:value` string equality.
+
+Legacy `http://camunda.org/schema/1.0/bpmn` extensions remain readable. XML prefixes
+are arbitrary; namespace URIs decide the profile. Mixing both profiles within a
+process is rejected rather than choosing one silently. Service/send tasks must
+define one registered HTTP connector with a supported method and a relative URL
+without path traversal. Script parameters and malformed connector configuration
+fail when the model is loaded, before a workflow starts.
+
+All three shipped model filenames and their element IDs are unchanged by the
+namespace migration, including the extra `strucna_praksa_edited.bpmn` model loaded
+by the server. Existing events can still resolve those IDs. Do not rename task IDs
+in models used by existing instances: engine records and dashboard mappings refer
+to them. There is no live model deployment endpoint; model-file replacement and an
+engine restart remain explicit development/deployment steps.
+
+Run `python -m unittest discover -s tests -v` in an environment with the engine
+requirements installed. The extension tests stub configuration and HTTP calls;
+the persistence tests use temporary SQLite databases and synthetic subprocesses.
+
 ## Supported BPMN elements so far:
 
 ### Start/end events
@@ -12,12 +45,12 @@
 
 ### Service Task & Send Task
 - Supported implementation at the moment is **Connector**
-    - Connector Id **must** be `http-connector`
+    - Connector ID is an `env.DS` key: `baserow`, `sendgrid` (the email connector), or `pdf`. The datasource type is `http-connector`.
     - Input parameters needs to have following parameters:
-        - **url** -> location of your web service, eg. http://myservice.com/api/call, and it should be **String or Expression** type
-        - **method** -> http method that you will use for request, eg. GET, and it should be **String or Expression** type
+        - **url** -> connector-relative path, for example `/api/prijavnica`; the base URL comes from `env.DS`, not the model
+        - **method** -> `GET`, `POST`, or `PATCH`
         - **url_parameter** -> in case you want to send URL parameter with your request, it should be **Map** type with _key_ and _value_. It is worth noting that _value_ can be simple expression eg. `${my_process_variable}`. Eg. URL request result for _key_ `task_id` and _value_ `${current_task}`, if `current_task` is inside process variables, will be http://myservice.com/api/call?task_id=1
-- Input variables and output variables for Service and Send task **must** be specified inside **Input/Output** tab
+- Input variables and output variables for Service and Send task **must** be specified in a task-level `fipu:inputOutput` element
     - Input parameters type at the moment can be **String or Expression** and if you plan to use process variables you should use expression, eg. `${my_process_variable}`, only **String or Expression** type is currently supporting expressions
         - All input variables will be send as JSON to the service  
     - Output parameters will be saved to process variables by their _name_, **String or Expression** is currently advised although only Script is not supported 
@@ -30,6 +63,15 @@
 - Binding **must** be **deployment** if you wish to call process from other BPMN diagram, other bindings assumes that called process is inside the same diagraas Call Activity
 
 ### Gateways (Exclusive, Parallel)
+
+An Exclusive Gateway takes the first matching outgoing Sequence Flow in XML order,
+then the default only when no other flow matches. A normal End Event consumes its
+own token; other parallel branches remain pending and are retained in the event
+checkpoint. The instance finishes when no tokens remain. Terminate End Events are
+outside the supported profile.
+
+Parallel gateways currently use a single-pass incoming-token counter. Cycles that
+re-enter a parallel gateway are not supported by this execution profile.
 
 ### Sequence flow with conditions
 - To use conditions on sequence flows you **must** chose Condition Type **Expression** and in Expression you need to write `key:value` where `key` is the process variable name and `value` is string

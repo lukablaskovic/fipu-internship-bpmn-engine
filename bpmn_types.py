@@ -1,12 +1,29 @@
 import requests
 import os
 import env
+from urllib.parse import unquote, urlsplit
 from utils.common import parse_expression
 
 NS = {
     "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
+    "fipu": "urn:fipu:bpmn:1",
     "camunda": "http://camunda.org/schema/1.0/bpmn",
 }
+
+
+def extension_namespaces(element):
+    """Read the FIPU profile or a legacy Camunda profile, never combine them."""
+    used = {
+        namespace
+        for node in element.iter()
+        for name in (node.tag, *node.attrib)
+        for namespace in (NS["fipu"], NS["camunda"])
+        if name.startswith("{" + namespace + "}")
+    }
+    if len(used) > 1:
+        raise ValueError(f"Mixed FIPU and Camunda extensions on {element.get('id', element.tag)}")
+    return {**NS, "ext": next(iter(used), NS["fipu"])}
+
 
 BPMN_MAPPINGS = {}
 
@@ -47,10 +64,11 @@ class Process(BpmnObject):
     def parse(self, element):
         super(Process, self).parse(element)
         # Extensions should exists only if it's Collaboration diagram
-        self.name = element.attrib["name"]
-        if element.find(".bpmn:extensionElements", NS):
-            ext = element.find(".bpmn:extensionElements", NS)
-            for p in ext.findall(".//camunda:property", NS):
+        self.name = element.get("name") or self._id
+        ns = extension_namespaces(element)
+        ext = element.find("bpmn:extensionElements", NS)
+        if ext is not None:
+            for p in ext.findall(".//ext:property", ns):
                 # Find property is_main
                 if p.attrib["name"] == "is_main" and p.attrib["value"] == "True":
                     self.is_main_in_collaboration = True
@@ -99,7 +117,8 @@ class UserTask(Task):
 
     def parse(self, element):
         super(UserTask, self).parse(element)
-        for f in element.findall(".//camunda:formField", NS):
+        ns = extension_namespaces(element)
+        for f in element.findall(".//ext:formField", ns):
             form_field_properties_dict = {}
             form_field_validations_dict = {}
 
@@ -110,12 +129,12 @@ class UserTask(Task):
             else:
                 self.form_fields[f.attrib["id"]]["label"] = ""
 
-            for p in f.findall(".//camunda:property", NS):
+            for p in f.findall(".//ext:property", ns):
                 form_field_properties_dict[p.attrib["id"]] = parse_expression(
                     p.attrib["value"], env.SYSTEM_VARS | env.DS
                 )
 
-            for v in f.findall(".//camunda:constraint", NS):
+            for v in f.findall(".//ext:constraint", ns):
                 form_field_validations_dict[v.attrib["name"]] = v.attrib["config"]
 
             self.form_fields[f.attrib["id"]]["validation"] = form_field_validations_dict
@@ -154,53 +173,64 @@ class ServiceTask(Task):
     def parse(self, element):
         super(ServiceTask, self).parse(element)
 
-        datasources = {}
-        try:
-            datasources = env.DS
-        except Exception:
-            print("No DS in env.py")
-
-        for ee in element.findall(".//bpmn:extensionElements", NS):
-            # Find direct children inputOutput, Input/Output tab in Camunda
+        ns = extension_namespaces(element)
+        connectors = []
+        for ee in element.findall("bpmn:extensionElements", NS):
             self._parse_input_output_variables(
-                ee, self.input_variables, self.output_variables
+                ee, self.input_variables, self.output_variables, ns
             )
-            # Find connector data, Connector tab in Camunda
-            for con in ee.findall(".camunda:connector", NS):
-                self._parse_input_output_variables(
-                    con,
-                    self.connector_fields["input_variables"],
-                    self.connector_fields["output_variables"],
-                )
-                connector_id = con.find("camunda:connectorId", NS).text
-                if connector_id in datasources:
-                    ds = datasources[connector_id]
-                    self.connector_fields["connector_id"] = ds["type"]
-                    self.connector_fields["input_variables"]["base_url"] = ds["url"]
+            connectors.extend(ee.findall("ext:connector", ns))
+        if len(connectors) != 1:
+            raise ValueError(f"Task {self._id} must define exactly one connector")
+        connector = connectors[0]
+        self._parse_input_output_variables(
+            connector,
+            self.connector_fields["input_variables"],
+            self.connector_fields["output_variables"],
+            ns,
+        )
+        identifiers = connector.findall("ext:connectorId", ns)
+        if len(identifiers) != 1 or identifiers[0].text not in env.DS:
+            raise ValueError(f"Task {self._id} has an unknown or missing connector ID")
+        datasource = env.DS[identifiers[0].text]
+        if datasource["type"] != "http-connector":
+            raise ValueError(f"Task {self._id} uses an unsupported connector type")
+        inputs = self.connector_fields["input_variables"]
+        if inputs.get("method") not in ("GET", "POST", "PATCH"):
+            raise ValueError(f"Task {self._id} requires GET, POST, or PATCH")
+        endpoint = inputs.get("url")
+        if (
+            not isinstance(endpoint, str)
+            or not endpoint.startswith("/")
+            or endpoint.startswith("//")
+            or ".." in unquote(urlsplit(endpoint).path).split("/")
+        ):
+            raise ValueError(f"Task {self._id} requires a connector-relative URL path without traversal")
+        if "url_parameter" in inputs and not isinstance(inputs["url_parameter"], dict):
+            raise ValueError(f"Task {self._id} requires a map for URL parameters")
+        self.connector_fields["connector_id"] = datasource["type"]
+        inputs["base_url"] = datasource["url"]
 
-    def _parse_input_output_variables(self, element, input_dict, output_dict):
-        for io in element.findall(".camunda:inputOutput", NS):
-            for inparam in io.findall(".camunda:inputParameter", NS):
-                self._parse_input_output_parameters(inparam, input_dict)
-            for outparam in io.findall(".camunda:outputParameter", NS):
-                self._parse_input_output_parameters(outparam, output_dict)
+    def _parse_input_output_variables(self, element, input_dict, output_dict, ns):
+        for io in element.findall("ext:inputOutput", ns):
+            for inparam in io.findall("ext:inputParameter", ns):
+                self._parse_input_output_parameters(inparam, input_dict, ns)
+            for outparam in io.findall("ext:outputParameter", ns):
+                self._parse_input_output_parameters(outparam, output_dict, ns)
 
-    def _parse_input_output_parameters(self, element, dictionary):
-        if element.findall(".camunda:list", NS):
-            helper_list = []
-            for lv in element.find("camunda:list", NS):
-                helper_list.append(lv.text) if lv.text else ""
-            dictionary[element.attrib["name"]] = helper_list
-        elif element.findall(".camunda:map", NS):
-            helper_dict = {}
-            for mv in element.find("camunda:map", NS):
-                helper_dict[mv.attrib["key"]] = mv.text
-            dictionary[element.attrib["name"]] = helper_dict
-        elif element.findall(".camunda:script", NS):
-            # script not supported
-            pass
+    def _parse_input_output_parameters(self, element, dictionary, ns):
+        values = element.find("ext:list", ns)
+        entries = element.find("ext:map", ns)
+        if values is not None:
+            dictionary[element.attrib["name"]] = [value.text or "" for value in values]
+        elif entries is not None:
+            dictionary[element.attrib["name"]] = {
+                entry.attrib["key"]: entry.text or "" for entry in entries
+            }
+        elif element.find("ext:script", ns) is not None:
+            raise ValueError(f"Task {self._id} uses unsupported script parameters")
         else:
-            dictionary[element.attrib["name"]] = element.text if element.text else ""
+            dictionary[element.attrib["name"]] = element.text or ""
 
     async def run_connector(self, variables, instance_id):
         # Check for URL parameters
@@ -221,8 +251,7 @@ class ServiceTask(Task):
             elif isinstance(value, list):
                 value = [parse_expression(v, variables) for v in value]
             elif isinstance(value, dict):
-                for k, v in value.items():
-                    value[k] = parse_expression(v, variables)
+                value = {k: parse_expression(v, variables) for k, v in value.items()}
             # Special case for instance id
             if key == "id_instance":
                 value = instance_id
@@ -282,12 +311,8 @@ class CallActivity(Task):
         super(CallActivity, self).parse(element)
         if element.attrib.get("calledElement"):
             self.called_element = element.attrib["calledElement"]
-        if (
-            element.attrib.get(f"{{{NS['camunda']}}}calledElementBinding")
-            and element.attrib.get(f"{{{NS['camunda']}}}calledElementBinding")
-            == "deployment"
-        ):
-            self.deployment = True
+        ns = extension_namespaces(element)
+        self.deployment = element.get(f"{{{ns['ext']}}}calledElementBinding") == "deployment"
 
 
 @bpmn_tag("bpmn:businessRule")

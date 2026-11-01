@@ -24,7 +24,10 @@ def serve():
     from types import ModuleType
     env = ModuleType("env")
     env.DB = {"provider": "sqlite"}
-    env.DS = {}
+    env.DS = {
+        name: {"type": "http-connector", "url": "http://127.0.0.1:1"}
+        for name in ("baserow", "sendgrid", "pdf")
+    }
     env.SYSTEM_VARS = {}
     env.BUGSNAG = {"api_key": ""}
     sys.modules["env"] = env
