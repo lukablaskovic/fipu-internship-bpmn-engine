@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <bpmn:process id="correction" name="Synthetic application correction">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="application">
+      <bpmn:extensionElements><camunda:formData>
+        <camunda:formField id="description" type="string" />
+        <camunda:formField id="details" type="string" />
+        <camunda:formField id="confirmed" type="boolean" />
+      </camunda:formData></bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:userTask id="review">
+      <bpmn:extensionElements><camunda:formData>
+        <camunda:formField id="approved" type="string" />
+      </camunda:formData></bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="decision" default="return" />
+    <bpmn:userTask id="diary" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="begin" sourceRef="start" targetRef="application" />
+    <bpmn:sequenceFlow id="submit" sourceRef="application" targetRef="review" />
+    <bpmn:sequenceFlow id="evaluate" sourceRef="review" targetRef="decision" />
+    <bpmn:sequenceFlow id="return" sourceRef="decision" targetRef="application" />
+    <bpmn:sequenceFlow id="accept" sourceRef="decision" targetRef="diary">
+      <bpmn:conditionExpression>approved:yes</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="finish" sourceRef="diary" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

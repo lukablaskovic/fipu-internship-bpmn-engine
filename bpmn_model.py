@@ -20,9 +20,10 @@ def get_model_for_instance(iid):
 
 
 class UserFormMessage:
-    def __init__(self, task_id, form_data={}):
+    def __init__(self, task_id, form_data=None, submission_id=None):
         self.task_id = task_id
-        self.form_data = form_data
+        self.form_data = form_data if form_data is not None else {}
+        self.submission_id = submission_id
 
 
 class BpmnModel:
@@ -143,7 +144,7 @@ class BpmnInstance:
 
     @classmethod
     def check_condition(cls, state, condition, log):
-        log(f"\t- checking variables={state} with {condition}... ")
+        log(f"\t- checking condition {condition}... ")
         ok = False
         if condition:
             key = condition.partition(":")[0]
@@ -160,7 +161,7 @@ class BpmnInstance:
                 for p in l.get("pending"):
                     pending_elements_list.append(self.model.elements[p])
                 self.pending = pending_elements_list
-                self.variables = {**l.get("activity_variables"), **self.variables}
+                self.variables.update(l.get("activity_variables"))
         return self
 
     async def run_subprocess(self, process_id):
@@ -179,6 +180,13 @@ class BpmnInstance:
         return True
 
     async def run(self):
+        try:
+            return await self._run()
+        except BaseException:
+            self.state = "failed"
+            raise
+
+    async def _run(self):
         print("Running instance", self._id)
         self.state = "running"
         _id = self._id
@@ -200,7 +208,7 @@ class BpmnInstance:
             exit = False
             can_continue = False
 
-            message = queue.pop() if len(queue) else None
+            message = queue[0] if queue else None
             if message:
                 log("--> msg in:", message and message.task_id)
 
@@ -210,16 +218,6 @@ class BpmnInstance:
             for idx, current in enumerate(self.pending):
                 # Helper variables dict
                 before_variables = deepcopy(self.variables)
-
-                if isinstance(current, StartEvent):
-                    # Helper variables for DB insert
-                    new_variables = {
-                        k: self.variables[k]
-                        for k in set(self.variables) - set(before_variables)
-                    }
-                    current_and_variables_dict[current._id] = new_variables
-                    # Create new running instance
-                    db_connector.add_running_instance(instance_id=self._id)
 
                 if isinstance(current, EndEvent):
                     exit = True
@@ -236,65 +234,29 @@ class BpmnInstance:
                     break
 
                 if isinstance(current, UserTask):
-                    if (
-                        message
-                        and isinstance(message, UserFormMessage)
-                        and message.task_id == current._id
-                    ):
-                        user_action = message.form_data
-
-                        log("DOING:", current)
-                        if user_action:
-                            log("\t- user sent:", user_action)
-                        can_continue = current.run(self.variables, user_action)
-                        # Helper variables for DB insert
-                        new_variables = {
-                            k: self.variables[k]
-                            for k in set(self.variables) - set(before_variables)
-                        }
-                        current_and_variables_dict[current._id] = new_variables
-
+                    if not (message and isinstance(message, UserFormMessage)
+                            and message.task_id == current._id):
+                        continue
+                    queue.popleft()
+                    log("DOING:", current)
+                    can_continue = current.run(self.variables, message.form_data)
                 elif isinstance(current, ServiceTask):
                     log("DOING:", current)
                     can_continue = await current.run(self.variables, _id)
-                    # Helper variables for DB insert
-                    new_variables = {
-                        k: self.variables[k]
-                        for k in set(self.variables) - set(before_variables)
-                    }
-                    current_and_variables_dict[current._id] = new_variables
-
-                elif isinstance(current, SendTask):
-                    log("DOING:", current)
-                    can_continue = current.run(self.variables, _id)
-                    # Helper variables for DB insert
-                    new_variables = {
-                        k: self.variables[k]
-                        for k in set(self.variables) - set(before_variables)
-                    }
-                    current_and_variables_dict[current._id] = new_variables
-
                 elif isinstance(current, CallActivity):
                     # TODO implement Variables tab CallActivity
                     log("DOING:", current)
                     can_continue = await self.run_subprocess(current.called_element)
-                    # Helper variables for DB insert
-                    new_variables = {
-                        k: self.variables[k]
-                        for k in set(self.variables) - set(before_variables)
-                    }
-                    current_and_variables_dict[current._id] = new_variables
-
                 else:
                     if isinstance(current, Task):
                         log("DOING:", current)
                     can_continue = current.run()
-                    # Helper variables for DB insert
-                    new_variables = {
-                        k: self.variables[k]
-                        for k in set(self.variables) - set(before_variables)
-                    }
-                    current_and_variables_dict[current._id] = new_variables
+
+                current_and_variables_dict[current._id] = {
+                    k: value for k, value in self.variables.items()
+                    if isinstance(current, StartEvent)
+                    or k not in before_variables or value != before_variables[k]
+                }
 
                 if can_continue:
                     del self.pending[idx]
@@ -333,10 +295,6 @@ class BpmnInstance:
                     # log("n", next_task)
                     if isinstance(next_task, ParallelGateway):
                         next_task.add_token()
-            else:
-                log("Waiting for user...", self.pending)
-                queue.append(await in_queue.get())
-
             # Insert finished events into DB
             for c in current_and_variables_dict:
                 # Add each current into DB
@@ -347,11 +305,21 @@ class BpmnInstance:
                     timestamp=datetime.now(),
                     pending=[pending._id for pending in self.pending],
                     activity_variables=current_and_variables_dict[c],
+                    submission_id=(
+                        message.submission_id
+                        if message and message.task_id == c else None
+                    ),
                 )
+
+            if not can_continue:
+                log("Waiting for user...", self.pending)
+                if queue:
+                    if queue[0].submission_id is not None:
+                        raise ValueError("Queued submission does not match a pending task")
+                    queue.popleft()
+                queue.append(await in_queue.get())
 
         log("DONE")
         self.state = "finished"
         self.pending = []
-        # Running instance finished
-        db_connector.finish_running_instance(self._id)
         return self.variables

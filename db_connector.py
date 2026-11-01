@@ -3,6 +3,7 @@ from datetime import datetime
 import env
 import os
 import logging
+import json
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -36,6 +37,31 @@ class RunningInstance(DB.Entity):
     instance_id = Required(str, unique=True)
 
 
+class PendingSubmission(DB.Entity):
+    instance_id = Required(str)
+    task_id = Required(str)
+    form_data = Required(Json)
+    composite_key(instance_id, task_id)
+
+
+@db_session
+def save_submission(instance_id, task_id, form_data):
+    submission = PendingSubmission(
+        instance_id=instance_id, task_id=task_id, form_data=form_data
+    )
+    commit()
+    return submission.id
+
+
+@db_session
+def get_pending_submissions(instance_id):
+    return [
+        {"id": s.id, "task_id": s.task_id, "form_data": json.loads(json.dumps(s.form_data))}
+        for s in PendingSubmission.select(lambda s: s.instance_id == instance_id)
+        .order_by(PendingSubmission.id)
+    ]
+
+
 def setup_db():
     try:
         if not os.path.isdir("database"):
@@ -45,34 +71,40 @@ def setup_db():
             DB.bind(**env.DB)
         else:
             DB.bind(
-                provider="sqlite", filename="database/database.sqlite", create_db=True
+                provider="sqlite", filename=os.path.abspath("database/database.sqlite"), create_db=True
             )
         DB.generate_mapping(create_tables=True)
         logger.info("Database setup completed")
-    except Exception as e:
-        logger.error(f"Error setting up the database: {e}")
+    except Exception:
+        logger.error("Error setting up the database")
+        raise
 
 
 @db_session
 def add_event(
-    model_name, instance_id, activity_id, timestamp, pending, activity_variables
+    model_name, instance_id, activity_id, timestamp, pending, activity_variables,
+    submission_id=None,
 ):
-    try:
-        Event(
-            model_name=model_name,
-            instance_id=instance_id,
-            activity_id=activity_id,
-            timestamp=timestamp,
-            pending=pending,
-            activity_variables=activity_variables,
-        )
-        commit()  # Explicitly committing the changes
-        logger.info(f"Event added for instance_id={instance_id}")
-        return {"status": "success"}
-    except Exception as e:
-        rollback()  # Reverting any changes due to the error
-        logger.error(f"Error adding event for instance_id={instance_id}: {e}")
-        return {"status": "error", "message": str(e)}
+    Event(
+        model_name=model_name,
+        instance_id=instance_id,
+        activity_id=activity_id,
+        timestamp=timestamp,
+        pending=pending,
+        activity_variables=activity_variables,
+    )
+    instance = RunningInstance.get(instance_id=instance_id)
+    if instance is None:
+        RunningInstance(instance_id=instance_id, running=bool(pending))
+    else:
+        instance.running = bool(pending)
+    if submission_id is not None:
+        submission = PendingSubmission[submission_id]
+        if submission.instance_id != instance_id or submission.task_id != activity_id:
+            raise ValueError("Submission does not match the completed task")
+        submission.delete()
+    # The transition and inbox consumption must commit together.
+    commit()
 
 
 @db_session
@@ -82,46 +114,13 @@ def get_all_events():
 
 
 @db_session
-def add_running_instance(instance_id):
-    try:
-        RunningInstance(instance_id=instance_id, running=True)
-        commit()
-        logger.info(f"Running instance added with instance_id={instance_id}")
-        return {"status": "success"}
-    except Exception as e:
-        rollback()
-        logger.error(
-            f"Error adding running instance with instance_id={instance_id}: {e}"
-        )
-        return {"status": "error", "message": str(e)}
-
-
-@db_session
-def finish_running_instance(instance):
-    try:
-        finished_instance = RunningInstance.get(instance_id=instance)
-        if finished_instance:
-            finished_instance.running = False
-            commit()
-            logger.info(f"Running instance finished with instance_id={instance}")
-            return {"status": "success"}
-        else:
-            logger.warning(f"Instance not found with instance_id={instance}")
-            return {"status": "error", "message": "Instance not found"}
-    except Exception as e:
-        rollback()
-        logger.error(f"Error finishing instance with instance_id={instance}: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@db_session
 def delete_instance(instance_id):
     try:
         instance_to_delete = RunningInstance.get(instance_id=instance_id)
         if instance_to_delete:
 
             Event.select(lambda e: e.instance_id == instance_id).delete()
-            commit()
+            PendingSubmission.select(lambda s: s.instance_id == instance_id).delete()
 
             instance_to_delete.delete()
             commit()
@@ -142,32 +141,17 @@ def delete_instance(instance_id):
 
 
 @db_session
-def get_running_instances_log():
-    try:
-        log = []
-        logger.info("Fetching running instances log")
-        running_instances = RunningInstance.select()[:]
-        for instance in running_instances:
-            instance_dict = {}
-            instance_dict[instance.instance_id] = {}
-            events = Event.select(
-                lambda e: e.instance_id == instance.instance_id
-            ).order_by(Event.timestamp)[:]
-            events_list = []
-            for event in events:
-                model_path = event.model_name
-                event_dict = {
-                    "activity_id": event.activity_id,
-                    "pending": event.pending,
-                    "activity_variables": event.activity_variables,
-                }
-                events_list.append(event_dict)
-
-            instance_dict[instance.instance_id]["model_path"] = model_path
-            instance_dict[instance.instance_id]["events"] = events_list
-            log.append(instance_dict)
-        logger.info("Running instances log fetched")
-        return log
-    except Exception as e:
-        logger.error(f"Error fetching running instances log: {e}")
-        return {"status": "error", "message": str(e)}
+def get_running_instances_log(running_only=True):
+    log = []
+    instances = RunningInstance.select(lambda i: i.running or not running_only)[:]
+    for instance in instances:
+        events = Event.select(
+            lambda e: e.instance_id == instance.instance_id
+        ).order_by(Event.id)[:]
+        if not events:
+            raise RuntimeError("Recorded instance has no recovery events")
+        log.append({instance.instance_id: {
+            "model_path": events[-1].model_name,
+            "events": [event.to_dict() for event in events],
+        }})
+    return log

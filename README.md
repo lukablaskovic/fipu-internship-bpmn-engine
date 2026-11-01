@@ -116,3 +116,42 @@ Running process 2
         [2] DOING: UserTask(Task down)
         [2] DONE
 ```
+
+
+## Persistence and restart checks
+
+A successful `POST /instance/{instance_id}/task/{task_id}/form` means the form is
+committed to the `PendingSubmission` inbox. It does not mean downstream connectors
+have completed. Invalid/non-waiting tasks and duplicate queued submissions return
+409; non-object form data returns 400; an inbox storage failure returns 503.
+
+Each processed form is removed from the inbox in the same transaction that writes
+its event, changed variable values, next pending task IDs, and running flag. Startup
+replays events in insertion order, applies later values over earlier ones, and
+reloads outstanding submissions for running instances only. Completed instances
+remain available in model listings. Persistence errors stop execution rather than
+advancing without a checkpoint; after correcting the database problem, restart the
+engine to recover its saved checkpoint and outstanding forms.
+
+Startup creates the additive `PendingSubmission` table using the existing Pony
+schema setup. Back up the database before upgrading and restart the single engine
+process; do not run old and new workers together. Existing events remain readable,
+but corrected values never recorded by older versions cannot be reconstructed.
+SQLite stores its database under the working directory's `database/` folder.
+
+With the engine dependencies installed, run:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Tests launch real HTTP servers in child processes with temporary SQLite databases,
+then kill and restart them. They cover corrected scalar/nested values and exact
+waiting tasks, acknowledged forms before queue processing, failed inbox/event
+writes, atomic inbox consumption, completed instances, duplicates, and deletion.
+The actual A/B models are also checked from the application step to diary waiting;
+those tests stub connector execution and use only synthetic data.
+
+This is single-process recovery, not distributed worker coordination. External
+connector effects (Baserow writes, email, PDF) are not atomic with engine events and
+can repeat if a crash occurs after the external effect but before its event commit.

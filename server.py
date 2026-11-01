@@ -7,7 +7,7 @@ import env
 from aiohttp import web
 from uuid import uuid4
 import asyncio
-from bpmn_model import BpmnModel, UserFormMessage, get_model_for_instance
+from bpmn_model import BpmnModel, UserFormMessage, UserTask, get_model_for_instance
 import aiohttp_cors
 import db_connector
 from functools import reduce
@@ -37,6 +37,10 @@ async def run_as_server(app):
                     key, {}
                 )
                 instance = await instance.run_from_log(data["events"])
+                for submission in db_connector.get_pending_submissions(key):
+                    instance.in_queue.put_nowait(UserFormMessage(
+                        submission["task_id"], submission["form_data"], submission["id"]
+                    ))
                 asyncio.create_task(instance.run())
 
 
@@ -53,7 +57,7 @@ async def get_models(request):
             m = BpmnModel(file)
             models[file] = m
 
-    running_instance_logs = db_connector.get_running_instances_log()
+    running_instance_logs = db_connector.get_running_instances_log(running_only=False)
 
     instance_to_model_mapping = {}
     for log_entry in running_instance_logs:
@@ -96,7 +100,24 @@ async def handle_form(request):
     instance_id = request.match_info.get("instance_id")
     task_id = request.match_info.get("task_id")
     m = get_model_for_instance(instance_id)
-    m.instances[instance_id].in_queue.put_nowait(UserFormMessage(task_id, post))
+    if m is None or instance_id not in m.instances:
+        raise web.HTTPNotFound()
+    instance = m.instances[instance_id]
+    if not isinstance(post, dict):
+        raise web.HTTPBadRequest(text="Form data must be a JSON object")
+    if instance.state != "running":
+        raise web.HTTPConflict(text="Instance is not running")
+    if not any(isinstance(t, UserTask) and t._id == task_id for t in instance.pending):
+        raise web.HTTPConflict(text="Task is not waiting for a form")
+    try:
+        if any(s["task_id"] == task_id for s in db_connector.get_pending_submissions(instance_id)):
+            raise web.HTTPConflict(text="Task already has an accepted submission")
+        submission_id = db_connector.save_submission(instance_id, task_id, post)
+    except web.HTTPException:
+        raise
+    except Exception:
+        raise web.HTTPServiceUnavailable(text="Could not save submission")
+    instance.in_queue.put_nowait(UserFormMessage(task_id, post, submission_id))
 
     return web.json_response({"status": "OK"})
 

@@ -1,0 +1,302 @@
+"""Real HTTP/subprocess restart tests; only temporary SQLite and synthetic data.
+
+Run: python -m unittest discover -s tests -v
+"""
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def serve():
+    # Never load a developer's .env or contact real connectors/Bugsnag.
+    from types import ModuleType
+    env = ModuleType("env")
+    env.DB = {"provider": "sqlite"}
+    env.DS = {}
+    env.SYSTEM_VARS = {}
+    env.BUGSNAG = {"api_key": ""}
+    sys.modules["env"] = env
+    sys.path.insert(0, str(ROOT))
+    import asyncio
+    import server
+    from bpmn_model import UserFormMessage, ServiceTask
+    from aiohttp import web
+
+    if Path("stub_connectors").exists():
+        async def run_service(self, variables, instance_id):
+            variables["connector_description"] = variables["detaljan_opis_zadatka"]
+            return True
+        ServiceTask.run = run_service
+
+    original_put = asyncio.Queue.put_nowait
+
+    def put(self, item):
+        # Drop only the volatile wakeup to force the pre-processing crash window.
+        if isinstance(item, UserFormMessage) and Path("pause_delivery").exists():
+            return
+        original_put(self, item)
+
+    asyncio.Queue.put_nowait = put
+    web.run_app(server.run(), host="127.0.0.1", port=int(sys.argv[2]))
+
+
+class PersistenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        (self.directory / "models").mkdir()
+        shutil.copy(ROOT / "tests/fixtures/correction.bpmn", self.directory / "models")
+        self.database = self.directory / "database/database.sqlite"
+        self.process = None
+        self.addCleanup(self.stop)
+        self.start()
+
+    def start(self):
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        self.url = f"http://127.0.0.1:{port}"
+        output = open(self.directory / "engine.log", "w")
+        self.process = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "--serve", str(port)],
+            cwd=self.directory, stdout=output, stderr=subprocess.STDOUT,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        output.close()
+        for _ in range(200):
+            if self.process.poll() is not None:
+                self.fail((self.directory / "engine.log").read_text())
+            try:
+                if self.request("GET", "/model")[0] == 200:
+                    return
+            except (URLError, ConnectionError):
+                pass
+            time.sleep(0.025)
+        self.fail("Engine did not start")
+
+    def stop(self):
+        if self.process is not None:
+            self.process.kill()  # No graceful shutdown or queue draining.
+            self.process.wait(timeout=5)
+            self.process = None
+
+    def restart(self):
+        self.stop()
+        self.start()
+
+    def request(self, method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = Request(self.url + path, data=data, method=method,
+                      headers={"Content-Type": "application/json"})
+        try:
+            with urlopen(req, timeout=3) as response:
+                return response.status, json.load(response)
+        except HTTPError as error:
+            return error.code, error.read().decode()
+
+    def sql(self, statement, parameters=()):
+        with sqlite3.connect(self.database) as connection:
+            return connection.execute(statement, parameters).fetchall()
+
+    def create(self):
+        status, body = self.request("POST", "/model/correction.bpmn/instance")
+        self.assertEqual(status, 200)
+        self.instance_id = body["id"]
+        self.wait_for("application")
+
+    def submit(self, task, data, status=200):
+        actual, body = self.request(
+            "POST", f"/instance/{self.instance_id}/task/{task}/form", data)
+        self.assertEqual(actual, status, body)
+        if status == 200:
+            self.assertEqual(body, {"status": "OK"})
+
+    def wait_for(self, task, state="running"):
+        for _ in range(200):
+            status, body = self.request("GET", f"/instance/{self.instance_id}")
+            if status == 200 and body["pending"] == [task] and body["state"] == state:
+                return body
+            time.sleep(0.01)
+        self.fail(f"Did not reach {task}/{state}: {body}")
+
+    def prepare_correction(self):
+        self.create()
+        self.submit("application", {
+            "description": "original", "details": {"hours": 80}, "confirmed": True,
+        })
+        self.wait_for("review")
+        self.submit("review", {"approved": "no"})
+        self.wait_for("application")
+
+    def assert_corrected(self):
+        body = self.wait_for("review")
+        self.assertEqual(body["variables"]["description"], "corrected")
+        self.assertEqual(body["variables"]["details"], {"hours": 0, "note": None})
+        self.assertIs(body["variables"]["confirmed"], False)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(0,)])
+
+    def correction(self):
+        self.submit("application", {
+            "description": "corrected", "details": {"hours": 0, "note": None},
+            "confirmed": False,
+        })
+
+    def test_corrected_values_and_exact_waiting_task_survive_restart(self):
+        self.prepare_correction()
+        self.correction()
+        self.assert_corrected()
+        self.restart()
+        self.assert_corrected()
+        # A replayed correction must also drive the subsequent gateway correctly.
+        self.submit("review", {"approved": "yes"})
+        self.wait_for("diary")
+        self.restart()
+        body = self.wait_for("diary")
+        self.assertEqual(body["variables"]["approved"], "yes")
+
+    def test_restart_immediately_after_ack_before_queue_processing(self):
+        self.prepare_correction()
+        marker = self.directory / "pause_delivery"
+        marker.touch()
+        self.correction()
+        self.stop()  # First action after the HTTP acknowledgement is SIGKILL.
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(1,)])
+        self.assertEqual(self.sql(
+            "SELECT COUNT(*) FROM Event WHERE activity_id = 'application'"), [(1,)])
+        marker.unlink()
+        self.start()
+        self.assert_corrected()
+        self.restart()
+        self.assert_corrected()
+        self.assertEqual(self.sql(
+            "SELECT COUNT(*) FROM Event WHERE activity_id = 'application'"), [(2,)])
+
+    def test_failed_inbox_write_never_acknowledges_success(self):
+        self.create()
+        self.sql("""CREATE TRIGGER fail_inbox BEFORE INSERT ON PendingSubmission
+                    BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END""")
+        self.submit("application", {"description": "unsaved"}, status=503)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(0,)])
+        self.restart()
+        self.assertNotIn("description", self.wait_for("application")["variables"])
+
+    def test_failed_transition_keeps_inbox_and_previous_checkpoint(self):
+        self.prepare_correction()
+        self.sql("""CREATE TRIGGER fail_event BEFORE INSERT ON Event
+                    WHEN NEW.activity_id = 'application'
+                    BEGIN SELECT RAISE(ABORT, 'synthetic event failure'); END""")
+        self.correction()  # Accepted into the durable inbox, processing then fails.
+        self.wait_for("review", state="failed")
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(1,)])
+        self.assertEqual(self.sql(
+            "SELECT COUNT(*) FROM Event WHERE activity_id = 'application'"), [(1,)])
+        self.submit("review", {"approved": "yes"}, status=409)
+        self.stop()
+        self.sql('DROP TRIGGER fail_event')
+        self.start()
+        self.assert_corrected()
+
+    def test_inbox_delete_failure_rolls_back_the_entire_transition(self):
+        self.prepare_correction()
+        self.sql("""CREATE TRIGGER fail_consumption BEFORE DELETE ON PendingSubmission
+                    BEGIN SELECT RAISE(ABORT, 'synthetic delete failure'); END""")
+        self.correction()
+        self.wait_for("review", state="failed")
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(1,)])
+        self.assertEqual(self.sql(
+            "SELECT COUNT(*) FROM Event WHERE activity_id = 'application'"), [(1,)])
+        self.stop()
+        self.sql('DROP TRIGGER fail_consumption')
+        self.start()
+        self.assert_corrected()
+
+    def test_actual_internship_models_recover_application_and_diary(self):
+        application = "ispunjavanje_prijavnice_student"
+        diary = "predavanje_dnevnika_student"
+        self.stop()
+        (self.directory / "stub_connectors").touch()
+        for model in ("strucna_praksa_A.bpmn", "strucna_praksa_B.bpmn"):
+            with self.subTest(model=model):
+                shutil.copy(ROOT / "models" / model, self.directory / "models")
+                self.instance_id = model
+                self.sql('INSERT INTO RunningInstance(instance_id, running) VALUES (?, 1)', (model,))
+                self.sql("""INSERT INTO Event(model_name, instance_id, activity_id,
+                            timestamp, pending, activity_variables) VALUES (?, ?, ?, ?, ?, ?)""",
+                         (model, model, application, "2020-01-01 00:00:00",
+                          json.dumps([application]), json.dumps({
+                              "detaljan_opis_zadatka": "original",
+                              "connector_description": "original",
+                          })))
+                self.start()
+                self.wait_for(application)
+                marker = self.directory / "pause_delivery"
+                marker.touch()
+                self.submit(application, {"detaljan_opis_zadatka": "corrected"})
+                self.stop()
+                marker.unlink()
+                self.start()
+                body = self.wait_for(diary)
+                self.assertEqual(body["variables"]["detaljan_opis_zadatka"], "corrected")
+                self.assertEqual(body["variables"]["connector_description"], "corrected")
+                self.restart()
+                body = self.wait_for(diary)
+                self.assertEqual(body["variables"]["detaljan_opis_zadatka"], "corrected")
+                self.assertEqual(body["variables"]["connector_description"], "corrected")
+                self.stop()
+
+    def test_finished_instances_are_not_restarted_but_remain_listed(self):
+        self.create()
+        self.submit("application", {"description": "done"})
+        self.wait_for("review")
+        self.submit("review", {"approved": "yes"})
+        self.wait_for("diary")
+        self.submit("diary", {})
+        for _ in range(200):
+            if self.sql('SELECT running FROM RunningInstance') == [(0,)]:
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.sql('SELECT running FROM RunningInstance'), [(0,)])
+        events = self.sql('SELECT COUNT(*) FROM Event')
+        self.restart()
+        self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[0], 404)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM Event'), events)
+        self.assertIn(self.instance_id, self.request("GET", "/model")[1]["results"][0]["instances"])
+
+    def test_invalid_and_duplicate_forms_are_not_accepted(self):
+        self.create()
+        self.submit("review", {}, status=409)
+        self.submit("application", [], status=400)
+        self.assertEqual(self.request("POST", "/instance/missing/task/application/form", {})[0], 404)
+        (self.directory / "pause_delivery").touch()
+        self.submit("application", {"description": "first"})
+        self.submit("application", {"description": "second"}, status=409)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(1,)])
+
+    def test_deletion_removes_pending_submissions(self):
+        self.create()
+        (self.directory / "pause_delivery").touch()
+        self.submit("application", {"description": "delete me"})
+        self.assertEqual(self.request("DELETE", f"/instance/{self.instance_id}")[0], 200)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(0,)])
+        self.restart()
+        self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[0], 404)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
+        serve()
+    else:
+        unittest.main()
