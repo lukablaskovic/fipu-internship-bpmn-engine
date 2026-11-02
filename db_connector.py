@@ -37,6 +37,11 @@ class RunningInstance(DB.Entity):
     instance_id = Required(str, unique=True)
 
 
+class InstanceDefinition(DB.Entity):
+    instance_id = PrimaryKey(str)
+    xml = Required(LongStr)
+
+
 class PendingSubmission(DB.Entity):
     instance_id = Required(str)
     task_id = Required(str)
@@ -83,7 +88,7 @@ def setup_db():
 @db_session
 def add_event(
     model_name, instance_id, activity_id, timestamp, pending, activity_variables,
-    submission_id=None,
+    submission_id=None, model_xml=None,
 ):
     Event(
         model_name=model_name,
@@ -96,6 +101,8 @@ def add_event(
     instance = RunningInstance.get(instance_id=instance_id)
     if instance is None:
         RunningInstance(instance_id=instance_id, running=bool(pending))
+        if model_xml is not None:
+            InstanceDefinition(instance_id=instance_id, xml=model_xml)
     else:
         instance.running = bool(pending)
     if submission_id is not None:
@@ -122,6 +129,7 @@ def delete_instance(instance_id):
             Event.select(lambda e: e.instance_id == instance_id).delete()
             PendingSubmission.select(lambda s: s.instance_id == instance_id).delete()
 
+            InstanceDefinition.select(lambda d: d.instance_id == instance_id).delete()
             instance_to_delete.delete()
             commit()
 
@@ -141,7 +149,7 @@ def delete_instance(instance_id):
 
 
 @db_session
-def get_running_instances_log(running_only=True):
+def get_running_instances_log(running_only=True, include_definition=False):
     log = []
     instances = RunningInstance.select(lambda i: i.running or not running_only)[:]
     for instance in instances:
@@ -150,8 +158,10 @@ def get_running_instances_log(running_only=True):
         ).order_by(Event.id)[:]
         if not events:
             raise RuntimeError("Recorded instance has no recovery events")
+        definition = InstanceDefinition.get(instance_id=instance.instance_id) if include_definition else None
         log.append({instance.instance_id: {
             "model_path": events[-1].model_name,
+            "xml": definition.xml if definition else None,
             "events": [event.to_dict() for event in events],
         }})
     return log

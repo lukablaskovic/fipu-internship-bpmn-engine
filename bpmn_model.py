@@ -41,7 +41,7 @@ class UserFormMessage:
 
 
 class BpmnModel:
-    def __init__(self, model_path):
+    def __init__(self, model_path, xml=None):
         self.pending = []
         self.elements = {}
         self.flow = defaultdict(list)
@@ -53,8 +53,12 @@ class BpmnModel:
         self.subprocesses = {}
         self.main_process = SimpleNamespace()
 
-        model_tree = ET.parse(os.path.join("models", self.model_path))
-        model_root = model_tree.getroot()
+        if xml is None:
+            with open(os.path.join("models", self.model_path), encoding="utf-8") as source:
+                xml = source.read()
+        self.xml = xml
+        model_root = ET.fromstring(xml)
+        self.version = int(model_root.get("processVersion", "1"))
         processes = model_root.findall("bpmn:process", NS)
         for process in processes:
             p = BPMN_MAPPINGS["bpmn:process"]()
@@ -94,6 +98,7 @@ class BpmnModel:
     def to_json(self):
         return {
             "model_path": self.model_path,
+            "version": self.version,
             "main_process": self.main_process.__dict__,
             "tasks": [
                 x.to_json() for x in self.elements.values() if isinstance(x, UserTask)
@@ -140,6 +145,7 @@ class BpmnInstance:
         instance_models[_id] = model
         self._id = _id
         self.model = model
+        self.version = model.version
         self.variables = deepcopy(variables)
         self.in_queue = in_queue
         self.state = "initialized"
@@ -153,7 +159,7 @@ class BpmnInstance:
             "id": self._id,
             "variables": self.variables,
             "state": self.state,
-            "model": self.model.to_json(),
+            "model": {**self.model.to_json(), "version": self.version},
             "pending": [x._id for x in self.pending if not isinstance(x, IntermediateCatchEvent)],
             "available_events": [x._id for x in self.pending if isinstance(x, IntermediateCatchEvent)],
             "triggered_events": self.triggered_events,
@@ -338,6 +344,7 @@ class BpmnInstance:
                 # Add each current into DB
                 db_connector.add_event(
                     model_name=self.model.model_path,
+                    model_xml=self.model.xml,
                     instance_id=self._id,
                     activity_id=c,
                     timestamp=datetime.now(),

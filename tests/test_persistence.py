@@ -143,6 +143,23 @@ class PersistenceTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"Did not reach {task}/{state}: {body}")
 
+    def test_instance_keeps_definition_across_save_and_restart(self):
+        self.create()
+        first = self.instance_id
+        path = self.directory / "models/correction.bpmn"
+        path.write_text(path.read_text().replace("<bpmn:definitions ", '<bpmn:definitions processVersion="2" ', 1))
+        self.create()
+        self.restart()
+        self.assertEqual(self.wait_for("application")["model"]["version"], 2)
+        self.instance_id = first
+        self.assertEqual(self.wait_for("application")["model"]["version"], 1)
+        with urlopen(self.url + f"/instance/{first}/model") as response:
+            self.assertNotIn(b'processVersion="2"', response.read())
+        self.assertEqual(self.request("GET", "/engine")[1]["deployments"][0]["active"], 2)
+        self.sql("DELETE FROM InstanceDefinition WHERE instance_id = ?", (first,))
+        self.restart()
+        self.assertIsNone(self.wait_for("application")["model"]["version"])
+
     def prepare_correction(self):
         self.create()
         self.submit("application", {

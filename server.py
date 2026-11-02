@@ -29,13 +29,18 @@ for file in os.listdir("models"):
 
 async def run_as_server(app):
     app["bpmn_models"] = models
-    log = db_connector.get_running_instances_log(running_only=False)
+    log = db_connector.get_running_instances_log(running_only=False, include_definition=True)
     for l in log:
         for key, data in l.items():
             if data["model_path"] in app["bpmn_models"]:
-                instance = await app["bpmn_models"][data["model_path"]].create_instance(
-                    key, {}
-                )
+                current = app["bpmn_models"][data["model_path"]]
+                model = current
+                if data["xml"] and data["xml"] != current.xml:
+                    model = BpmnModel(current.model_path, data["xml"])
+                    model.instances = current.instances
+                instance = await model.create_instance(key, {})
+                if not data["xml"]:
+                    instance.version = None
                 instance = await instance.run_from_log(data["events"])
                 for submission in db_connector.get_pending_submissions(key):
                     if isinstance(instance.model.elements.get(submission["task_id"]), IntermediateCatchEvent):
@@ -76,7 +81,7 @@ async def authorize(request, handler):
     else:
         principal = request["principal"] = await access.connector_read(request, "/api/session")
         if not principal["coordinator"]:
-            if name not in {"get_model", "handle_new_instance", "handle_instance_info", "handle_task_info", "handle_form", "handle_event"}:
+            if name not in {"get_instance_model", "get_model", "handle_new_instance", "handle_instance_info", "handle_task_info", "handle_form", "handle_event"}:
                 raise web.HTTPForbidden()
             if instance_id:
                 model = get_model_for_instance(instance_id)
@@ -119,6 +124,27 @@ async def get_models(request):
 
     data = [m.to_json() for m in models.values()]
     return web.json_response({"status": "ok", "results": data})
+
+
+@routes.get("/engine")
+async def engine_dashboard(request):
+    deployments = []
+    for name, loaded in sorted(request.app["bpmn_models"].items()):
+        current = BpmnModel(name)
+        deployments.append({
+            "model_path": name, "version": current.version,
+            "process": current.main_process.name,
+            "active": sum(i.state not in {"finished", "cancelled"} for i in loaded.instances.values()),
+        })
+    return web.json_response({"deployments": deployments})
+
+
+@routes.get("/instance/{instance_id}/model")
+async def get_instance_model(request):
+    model = get_model_for_instance(request.match_info["instance_id"])
+    if not model:
+        raise web.HTTPNotFound()
+    return web.Response(text=model.xml, content_type="application/xml")
 
 
 @routes.get("/model/{model_name}")
