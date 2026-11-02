@@ -583,7 +583,11 @@ async def delete_instance(request):
 async def get_all_events(request):
     try:
         events = db_connector.get_all_events()
-        data = [event.to_dict() for event in events]
+        data = []
+        for event in events:
+            model = request.app["bpmn_models"].get(event.model_name)
+            instance = model and model.instances.get(event.instance_id)
+            data.append({**event.to_dict(), "model_version": instance.version if instance else None})
         return web.json_response({"status": "ok", "results": data})
     except Exception as e:
         return web.json_response({"status": "error", "message": str(e)})
