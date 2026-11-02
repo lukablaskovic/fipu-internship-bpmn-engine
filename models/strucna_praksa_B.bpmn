@@ -17,7 +17,7 @@
         <bpmn:flowNodeRef>Gateway_1865qr0</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>model_b_direktna_prijava_student</bpmn:flowNodeRef>
 
-      </bpmn:lane>
+      <bpmn:flowNodeRef>odustajanje_od_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>evidentiranje_odustajanja</bpmn:flowNodeRef><bpmn:flowNodeRef>end_event_odustajanje</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="profesor_lane" name="Profesor">
         <bpmn:flowNodeRef>spremanje_dnevnika</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>upis_ocjene</bpmn:flowNodeRef>
@@ -82,7 +82,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
     </bpmn:userTask>
     <bpmn:endEvent id="end_event_student" name="Student ocjenjen">
       <bpmn:incoming>Flow_15bhsc5</bpmn:incoming>
-    </bpmn:endEvent>
+    <bpmn:terminateEventDefinition/></bpmn:endEvent>
     <bpmn:sequenceFlow id="Flow_1l8y47v" sourceRef="ispunjavanje_prijavnice_student" targetRef="azuriranje_podataka_profesor"/>
     <bpmn:sequenceFlow id="Flow_1bua3l7" sourceRef="azuriranje_podataka_profesor" targetRef="kreiranje_potvrde_profesor"/>
     <bpmn:sequenceFlow id="Flow_1g3f3ei" sourceRef="kreiranje_potvrde_profesor" targetRef="Gateway_1b8kjb9"/>
@@ -109,10 +109,9 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
             <fipu:inputParameter name="url">/email</fipu:inputParameter>
             <fipu:inputParameter name="method">POST</fipu:inputParameter>
           </fipu:inputOutput>
-          <fipu:connectorId>sendgrid</fipu:connectorId>
+          <fipu:connectorId>emailjs</fipu:connectorId>
         </fipu:connector>
         <fipu:inputOutput>
-          <fipu:inputParameter name="attachment_name">${student_prezime}_potvrda.pdf</fipu:inputParameter>
           <fipu:inputParameter name="id_instance"/>
           <fipu:inputParameter name="next_task">predavanje_dnevnika_student</fipu:inputParameter>
           <fipu:inputParameter name="pdf_attachment_url">${pdf_attachment_url}</fipu:inputParameter>
@@ -227,10 +226,9 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
             <fipu:inputParameter name="url">/email</fipu:inputParameter>
             <fipu:inputParameter name="method">POST</fipu:inputParameter>
           </fipu:inputOutput>
-          <fipu:connectorId>sendgrid</fipu:connectorId>
+          <fipu:connectorId>emailjs</fipu:connectorId>
         </fipu:connector>
         <fipu:inputOutput>
-          <fipu:inputParameter name="attachment_name">${student_prezime}_potvrda.pdf</fipu:inputParameter>
           <fipu:inputParameter name="id_instance"/>
           <fipu:inputParameter name="pdf_attachment_url">${pdf_attachment_url}</fipu:inputParameter>
           <fipu:inputParameter name="student_email">${student_email}</fipu:inputParameter>
@@ -277,7 +275,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
       <bpmn:incoming>Flow_1tjtkv4</bpmn:incoming>
       <bpmn:outgoing>Flow_04xr50r</bpmn:outgoing>
       <bpmn:outgoing>Flow_121jstx</bpmn:outgoing>
-    </bpmn:parallelGateway>
+    <bpmn:outgoing>Flow_cekanje_odustajanja</bpmn:outgoing></bpmn:parallelGateway>
     <bpmn:sequenceFlow id="Flow_1tjtkv4" sourceRef="start_event_student" targetRef="Gateway_1865qr0"/>
     <bpmn:sequenceFlow id="Flow_04xr50r" sourceRef="Gateway_1865qr0" targetRef="model_b_dogovor_profesor"/>
     <bpmn:sequenceFlow id="Flow_121jstx" sourceRef="Gateway_1865qr0" targetRef="model_b_dogovor_poslodavac"/>
@@ -315,7 +313,7 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
               </fipu:map>
             </fipu:inputParameter>
           </fipu:inputOutput>
-          <fipu:connectorId>sendgrid</fipu:connectorId>
+          <fipu:connectorId>emailjs</fipu:connectorId>
         </fipu:connector>
         <fipu:inputOutput>
           <fipu:inputParameter name="poslodavac_email">${poslodavac_email}</fipu:inputParameter>
@@ -372,7 +370,7 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
       <bpmn:outgoing>Flow_0gjgrzo</bpmn:outgoing>
     </bpmn:userTask>
 
-  <bpmn:endEvent id="end_event_dogovor_poslodavac" name="Dogovor s poslodavcem završen"><bpmn:incoming>Flow_dogovor_poslodavac_zavrsen</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_dogovor_poslodavac_zavrsen" sourceRef="model_b_dogovor_poslodavac" targetRef="end_event_dogovor_poslodavac" name=""/></bpmn:process>
+  <bpmn:endEvent id="end_event_dogovor_poslodavac" name="Dogovor s poslodavcem završen"><bpmn:incoming>Flow_dogovor_poslodavac_zavrsen</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_dogovor_poslodavac_zavrsen" sourceRef="model_b_dogovor_poslodavac" targetRef="end_event_dogovor_poslodavac" name=""/><bpmn:intermediateCatchEvent id="odustajanje_od_prakse" name="Odustajanje od prakse"><bpmn:messageEventDefinition/><bpmn:incoming>Flow_cekanje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_evidentiranje_odustajanja</bpmn:outgoing></bpmn:intermediateCatchEvent><bpmn:serviceTask id="evidentiranje_odustajanja" name="Evidentiraj odustajanje"><bpmn:extensionElements><fipu:inputOutput><fipu:inputParameter name="id_instance"/></fipu:inputOutput><fipu:connector><fipu:connectorId>baserow</fipu:connectorId><fipu:inputOutput><fipu:inputParameter name="method">POST</fipu:inputParameter><fipu:inputParameter name="url">/api/odustajanje</fipu:inputParameter><fipu:inputParameter name="url_parameter"><fipu:map/></fipu:inputParameter></fipu:inputOutput></fipu:connector></bpmn:extensionElements><bpmn:incoming>Flow_evidentiranje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_kraj_odustajanja</bpmn:outgoing></bpmn:serviceTask><bpmn:endEvent id="end_event_odustajanje" name="Student odustao" fipu:outcome="cancelled"><bpmn:terminateEventDefinition/><bpmn:incoming>Flow_kraj_odustajanja</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_cekanje_odustajanja" sourceRef="Gateway_1865qr0" targetRef="odustajanje_od_prakse" name=""/><bpmn:sequenceFlow id="Flow_evidentiranje_odustajanja" sourceRef="odustajanje_od_prakse" targetRef="evidentiranje_odustajanja" name=""/><bpmn:sequenceFlow id="Flow_kraj_odustajanja" sourceRef="evidentiranje_odustajanja" targetRef="end_event_odustajanje" name=""/></bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_0ojchsi">
       <bpmndi:BPMNShape id="Participant_1yqxmat_di" bpmnElement="sustav_pool" isHorizontal="true">
@@ -550,6 +548,6 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
         <di:waypoint x="1210" y="550"/>
         <di:waypoint x="1270" y="550"/>
       </bpmndi:BPMNEdge>
-    <bpmndi:BPMNShape id="end_event_dogovor_poslodavac_di" bpmnElement="end_event_dogovor_poslodavac"><dc:Bounds x="650" y="132" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_dogovor_poslodavac_zavrsen_di" bpmnElement="Flow_dogovor_poslodavac_zavrsen"><di:waypoint x="560" y="150"/><di:waypoint x="650" y="150"/></bpmndi:BPMNEdge></bpmndi:BPMNPlane>
+    <bpmndi:BPMNShape id="end_event_dogovor_poslodavac_di" bpmnElement="end_event_dogovor_poslodavac"><dc:Bounds x="650" y="132" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_dogovor_poslodavac_zavrsen_di" bpmnElement="Flow_dogovor_poslodavac_zavrsen"><di:waypoint x="560" y="150"/><di:waypoint x="650" y="150"/></bpmndi:BPMNEdge><bpmndi:BPMNShape id="odustajanje_od_prakse_di" bpmnElement="odustajanje_od_prakse"><dc:Bounds x="620" y="312" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="evidentiranje_odustajanja_di" bpmnElement="evidentiranje_odustajanja"><dc:Bounds x="730" y="290" width="120" height="80"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="end_event_odustajanje_di" bpmnElement="end_event_odustajanje"><dc:Bounds x="930" y="312" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_cekanje_odustajanja_di" bpmnElement="Flow_cekanje_odustajanja"><di:waypoint x="360" y="325"/><di:waypoint x="360" y="270"/><di:waypoint x="638" y="270"/><di:waypoint x="638" y="312"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_evidentiranje_odustajanja_di" bpmnElement="Flow_evidentiranje_odustajanja"><di:waypoint x="656" y="330"/><di:waypoint x="730" y="330"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_kraj_odustajanja_di" bpmnElement="Flow_kraj_odustajanja"><di:waypoint x="850" y="330"/><di:waypoint x="930" y="330"/></bpmndi:BPMNEdge></bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

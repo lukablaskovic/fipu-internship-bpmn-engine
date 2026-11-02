@@ -26,7 +26,7 @@ def serve():
     env.DB = {"provider": "sqlite"}
     env.DS = {
         name: {"type": "http-connector", "url": "http://127.0.0.1:1"}
-        for name in ("baserow", "sendgrid", "pdf")
+        for name in ("baserow", "emailjs", "pdf")
     }
     env.SYSTEM_VARS = {}
     sys.modules["env"] = env
@@ -38,7 +38,12 @@ def serve():
 
     if Path("stub_connectors").exists():
         async def run_service(self, variables, instance_id):
-            variables["connector_description"] = variables["detaljan_opis_zadatka"]
+            if self._id == "evidentiranje_odustajanja":
+                if Path("fail_withdrawal").exists():
+                    raise RuntimeError("Synthetic connector failure")
+                variables["withdrawal_saved"] = True
+                return True
+            variables["connector_description"] = variables.get("detaljan_opis_zadatka")
             return True
         ServiceTask.run = run_service
 
@@ -273,9 +278,123 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(self.sql('SELECT running FROM RunningInstance'), [(0,)])
         events = self.sql('SELECT COUNT(*) FROM Event')
         self.restart()
-        self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[0], 404)
+        self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[1]["state"], "finished")
         self.assertEqual(self.sql('SELECT COUNT(*) FROM Event'), events)
         self.assertIn(self.instance_id, self.request("GET", "/model")[1]["results"][0]["instances"])
+
+    def prepare_internship(self, model="A", task="ispunjavanje_prijavnice_student"):
+        from uuid import uuid4
+        self.stop()
+        (self.directory / "stub_connectors").touch()
+        filename = f"strucna_praksa_{model}.bpmn"
+        shutil.copy(ROOT / "models" / filename, self.directory / "models")
+        self.instance_id = str(uuid4())
+        self.sql('INSERT INTO RunningInstance(instance_id, running) VALUES (?, 1)', (self.instance_id,))
+        self.sql("""INSERT INTO Event(model_name, instance_id, activity_id,
+                    timestamp, pending, activity_variables) VALUES (?, ?, ?, ?, ?, ?)""",
+                 (filename, self.instance_id, task, "2020-01-01 00:00:00",
+                  json.dumps([task]), json.dumps({"description": "preserved"})))
+        self.start()
+        body = self.wait_for(task)
+        self.assertIn("odustajanje_od_prakse", body["available_events"])
+
+    def withdraw(self, expected=200):
+        status, body = self.request("POST", f"/instance/{self.instance_id}/event/odustajanje_od_prakse", {})
+        self.assertEqual(status, expected, body)
+
+    def wait_for_state(self, state):
+        for _ in range(200):
+            status, body = self.request("GET", f"/instance/{self.instance_id}")
+            if status == 200 and body["state"] == state:
+                return body
+            time.sleep(0.01)
+        self.fail(f"Did not reach {state}: {body}")
+
+    def assert_withdrawn(self):
+        body = self.wait_for_state("cancelled")
+        self.assertEqual(body["pending"], [])
+        self.assertEqual(body["available_events"], [])
+        self.assertEqual(body["variables"]["description"], "preserved")
+        self.assertTrue(body["variables"]["withdrawal_saved"])
+        self.assertEqual(self.sql('SELECT running FROM RunningInstance WHERE instance_id=?', (self.instance_id,)), [(0,)])
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission WHERE instance_id=?', (self.instance_id,)), [(0,)])
+
+    def test_withdrawal_of_both_models_at_every_user_stage_survives_restart(self):
+        stages = {
+            "A": ["odabiranje_zadatka_student", "alociranje_profesor", "evaluacija_poslodavac", "ispunjavanje_prijavnice_student", "predavanje_dnevnika_student", "upis_ocjene"],
+            "B": ["model_b_odobrenje_zadatka", "model_b_direktna_prijava_student", "ispunjavanje_prijavnice_student", "predavanje_dnevnika_student", "upis_ocjene"],
+        }
+        for model, tasks in stages.items():
+            for task in tasks:
+                with self.subTest(model=model, task=task):
+                    self.prepare_internship(model, task)
+                    marker = self.directory / "pause_delivery"
+                    marker.touch()
+                    self.withdraw()
+                    self.withdraw()  # Lost acknowledgement retry must not duplicate the inbox.
+                    self.submit(task, {}, status=409)
+                    self.stop()
+                    marker.unlink()
+                    self.start()
+                    self.assert_withdrawn()
+                    self.withdraw()
+                    self.submit(task, {}, status=409)
+                    self.restart()
+                    self.assert_withdrawn()
+                    self.assertEqual(self.sql("SELECT COUNT(*) FROM Event WHERE instance_id=? AND activity_id='end_event_odustajanje'", (self.instance_id,)), [(1,)])
+
+    def test_new_instances_split_into_internship_and_withdrawal(self):
+        for model, task in (("A", "odabiranje_zadatka_student"), ("B", "model_b_odobrenje_zadatka")):
+            with self.subTest(model=model):
+                self.stop()
+                (self.directory / "stub_connectors").touch()
+                filename = f"strucna_praksa_{model}.bpmn"
+                shutil.copy(ROOT / "models" / filename, self.directory / "models")
+                self.start()
+                status, body = self.request("POST", f"/model/{filename}/instance")
+                self.assertEqual(status, 200, body)
+                self.instance_id = body["id"]
+                body = self.wait_for(task)
+                self.assertEqual(body["available_events"], ["odustajanje_od_prakse"])
+                self.restart()
+                self.assertEqual(self.wait_for(task)["available_events"], ["odustajanje_od_prakse"])
+                self.withdraw()
+                body = self.wait_for_state("cancelled")
+                self.assertEqual(body["pending"], [])
+                self.assertEqual(body["available_events"], [])
+                self.assertTrue(body["variables"]["withdrawal_saved"])
+
+    def test_withdrawal_failure_can_be_retried_without_repeating_the_message(self):
+        self.prepare_internship()
+        marker = self.directory / "fail_withdrawal"
+        marker.touch()
+        self.withdraw()
+        self.wait_for_state("failed")
+        self.submit("ispunjavanje_prijavnice_student", {}, status=409)
+        marker.unlink()
+        self.withdraw()
+        self.assert_withdrawn()
+        self.assertEqual(self.sql("SELECT COUNT(*) FROM Event WHERE activity_id='odustajanje_od_prakse'"), [(1,)])
+
+    def test_failed_message_checkpoint_keeps_durable_request_for_retry(self):
+        self.prepare_internship()
+        self.sql("""CREATE TRIGGER fail_withdrawal BEFORE INSERT ON Event
+                    WHEN NEW.activity_id = 'odustajanje_od_prakse'
+                    BEGIN SELECT RAISE(ABORT, 'synthetic event failure'); END""")
+        self.withdraw()
+        self.wait_for_state("failed")
+        self.sql('DROP TRIGGER fail_withdrawal')
+        self.withdraw()
+        self.assert_withdrawn()
+
+    def test_normal_completion_clears_withdrawal_branch_and_rejects_late_withdrawal(self):
+        for model in ("A", "B"):
+            self.prepare_internship(model, "upis_ocjene")
+            self.submit("upis_ocjene", {"ocjena_unesena_studomat": "true"})
+            body = self.wait_for_state("finished")
+            self.assertEqual(body["pending"], [])
+            self.assertEqual(body["available_events"], [])
+            self.withdraw(expected=409)
 
     def test_invalid_and_duplicate_forms_are_not_accepted(self):
         self.create()

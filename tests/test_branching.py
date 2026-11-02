@@ -55,6 +55,24 @@ class BranchingTests(unittest.IsolatedAsyncioTestCase):
         self.runner = asyncio.create_task(self.instance.run())
         await asyncio.sleep(0)
 
+    async def test_reloading_source_preserves_live_graph_and_uses_current_file_for_new_instances(self):
+        path = Path(self.temp.name) / "source.bpmn"
+        xml = f'<bpmn:definitions xmlns:bpmn="{types.NS["bpmn"]}"><bpmn:process id="p" name="Before"><bpmn:startEvent id="start"/></bpmn:process></bpmn:definitions>'
+        path.write_text(xml)
+        models = {str(path): engine.BpmnModel(str(path))}
+        old = await models[str(path)].create_instance("old-source", {})
+        path.write_text(xml.replace('name="Before"', 'name="After"'))
+        current = engine.reload_model(models, str(path))
+        new = await current.create_instance("new-source", {})
+        self.assertEqual(old.model.main_process.name, "Before")
+        self.assertEqual(new.model.main_process.name, "After")
+        self.assertIs(current.instances[old._id], old)
+        self.assertIs(engine.get_model_for_instance(old._id), old.model)
+        path.write_text("invalid XML")
+        with self.assertRaises(Exception):
+            engine.reload_model(models, str(path))
+        self.assertIs(models[str(path)], current)
+
     async def test_end_event_preserves_other_parallel_tokens_and_checkpoint(self):
         await self.start('''
           <bpmn:startEvent id="start"/>

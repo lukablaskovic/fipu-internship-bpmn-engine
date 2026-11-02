@@ -19,6 +19,14 @@ def get_model_for_instance(iid):
     return instance_models.get(iid, None)
 
 
+def reload_model(models, name):
+    current = BpmnModel(name)
+    # Existing instances keep their graph; new instances use the current source file.
+    current.instances = models[name].instances
+    models[name] = current
+    return current
+
+
 class UserFormMessage:
     def __init__(self, task_id, form_data=None, submission_id=None):
         self.task_id = task_id
@@ -131,6 +139,8 @@ class BpmnInstance:
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
         self.process = process
+        self.triggered_events = []
+        self.active_event = None
 
     def to_json(self):
         return {
@@ -138,7 +148,10 @@ class BpmnInstance:
             "variables": self.variables,
             "state": self.state,
             "model": self.model.to_json(),
-            "pending": [x._id for x in self.pending],
+            "pending": [x._id for x in self.pending if not isinstance(x, IntermediateCatchEvent)],
+            "available_events": [x._id for x in self.pending if isinstance(x, IntermediateCatchEvent)],
+            "triggered_events": self.triggered_events,
+            "active_event": self.active_event,
             "env": env.SYSTEM_VARS,
         }
 
@@ -155,6 +168,8 @@ class BpmnInstance:
         return ok
 
     async def run_from_log(self, log):
+        self.triggered_events = []
+        self.active_event = None
         for l in log:
             if l.get("activity_id") in self.model.elements:
                 pending_elements_list = []
@@ -162,6 +177,29 @@ class BpmnInstance:
                     pending_elements_list.append(self.model.elements[p])
                 self.pending = pending_elements_list
                 self.variables.update(l.get("activity_variables"))
+                activity = self.model.elements[l["activity_id"]]
+                if isinstance(activity, IntermediateCatchEvent):
+                    self.triggered_events.append(activity._id)
+                    self.active_event = activity._id
+                if not self.pending:
+                    self.state = activity.outcome if isinstance(activity, EndEvent) else "finished"
+        # Existing active checkpoints gain newly modelled start-branch subscriptions.
+        if self.pending:
+            pending_ids = {task._id for task in self.pending}
+            branches = list(self.model.process_pending[self.process])
+            visited = set()
+            while branches:
+                node = branches.pop()
+                if node._id in visited:
+                    continue
+                visited.add(node._id)
+                for flow in self.model.flow[node._id]:
+                    event = self.model.elements[flow.target]
+                    if isinstance(event, ParallelGateway) and event.incoming <= 1:
+                        branches.append(event)
+                    elif isinstance(event, IntermediateCatchEvent) and event._id not in pending_ids and event._id not in self.triggered_events:
+                        self.pending.append(deepcopy(event))
+                        pending_ids.add(event._id)
         return self
 
     async def run_subprocess(self, process_id):
@@ -189,6 +227,7 @@ class BpmnInstance:
     async def _run(self):
         print("Running instance", self._id)
         self.state = "running"
+        outcome = "finished"
         _id = self._id
         prefix = f"\t[{_id}]"
         log = partial(print, prefix)  # if _id == "2" else lambda *x: x
@@ -218,7 +257,13 @@ class BpmnInstance:
                 # Helper variables dict
                 before_variables = deepcopy(self.variables)
 
-                if isinstance(current, UserTask):
+                if isinstance(current, IntermediateCatchEvent):
+                    if not (message and message.task_id == current._id):
+                        continue
+                    queue.popleft()
+                    self.active_event = current._id
+                    can_continue = True
+                elif isinstance(current, UserTask):
                     if not (message and isinstance(message, UserFormMessage)
                             and message.task_id == current._id):
                         continue
@@ -245,6 +290,9 @@ class BpmnInstance:
 
                 if can_continue:
                     del self.pending[idx]
+                    if isinstance(current, EndEvent) and current.terminate:
+                        self.pending = []
+                        outcome = current.outcome
                     break
 
             default = current.default if isinstance(current, ExclusiveGateway) else None
@@ -295,7 +343,11 @@ class BpmnInstance:
                     ),
                 )
 
+            if can_continue and isinstance(current, IntermediateCatchEvent):
+                self.triggered_events.append(current._id)
+
             if not can_continue:
+                self.active_event = None
                 log("Waiting for user...", self.pending)
                 if queue:
                     if queue[0].submission_id is not None:
@@ -304,6 +356,6 @@ class BpmnInstance:
                 queue.append(await in_queue.get())
 
         log("DONE")
-        self.state = "finished"
+        self.state = outcome
         self.pending = []
         return self.variables

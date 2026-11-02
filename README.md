@@ -22,12 +22,9 @@ define one registered HTTP connector with a supported method and a relative URL
 without path traversal. Script parameters and malformed connector configuration
 fail when the model is loaded, before a workflow starts.
 
-All three shipped model filenames and their element IDs are unchanged by the
-namespace migration, including the extra `strucna_praksa_edited.bpmn` model loaded
-by the server. Existing events can still resolve those IDs. Do not rename task IDs
-in models used by existing instances: engine records and dashboard mappings refer
-to them. There is no live model deployment endpoint; model-file replacement and an
-engine restart remain explicit development/deployment steps.
+`models/` contains exactly the authoritative A/B files. Studio and MCP edit these files; the dashboard reads them through `GET /model/<filename>` with caching disabled. The obsolete edited/example model was removed (no local instances used it). Before deploying this removal elsewhere, check for instances referencing that legacy filename.
+
+Every new instance reparses its current model file. Existing live instances retain their already-loaded graph and remain discoverable through the shared instance registry. Restart recovery still reads the current files: preserve task/form IDs and review graph compatibility for existing instances. There is no public model-write endpoint on the engine; Studio's local authoring service owns revision-checked file writes. No restart or snapshot sync is needed for new instances after a model edit.
 
 Run `python -m unittest discover -s tests -v` in an environment with the engine
 requirements installed. The extension tests stub configuration and HTTP calls;
@@ -45,7 +42,7 @@ the persistence tests use temporary SQLite databases and synthetic subprocesses.
 
 ### Service Task & Send Task
 - Supported implementation at the moment is **Connector**
-    - Connector ID is an `env.DS` key: `baserow`, `sendgrid` (the email connector), or `pdf`. The datasource type is `http-connector`.
+    - Connector ID is an `env.DS` key: `baserow`, `emailjs` (the email connector), or `pdf`. The datasource type is `http-connector`.
     - Input parameters needs to have following parameters:
         - **url** -> connector-relative path, for example `/api/prijavnica`; the base URL comes from `env.DS`, not the model
         - **method** -> `GET`, `POST`, or `PATCH`
@@ -197,3 +194,9 @@ those tests stub connector execution and use only synthetic data.
 This is single-process recovery, not distributed worker coordination. External
 connector effects (Baserow writes, email, PDF) are not atomic with engine events and
 can repeat if a crash occurs after the external effect but before its event commit.
+
+### Internship withdrawal
+
+Both internship models contain the `odustajanje_od_prakse` Intermediate Message Catch Event. Submit `{}` to `POST /instance/{instance_id}/event/odustajanje_od_prakse`; acknowledgement means the message is durable, not that the connector has finished. Read the instance until `state` is `cancelled` (or `failed`). Repeating the event request after a failed connector/checkpoint resumes from the last committed transition. Completed withdrawal requests are idempotent. A normal form submitted after withdrawal is accepted is rejected with 409.
+
+The BPMN branch updates linked Baserow allocations to `student_odustao` and reaches a terminate end event with `fipu:outcome="cancelled"`. It preserves business records and event history. The API exposes waiting message IDs in `available_events` and the accepted message in `active_event`; ordinary `pending` task IDs retain their previous meaning. Completed instances remain readable after restart. Restart the engine to add the new start-branch subscription to existing active instances; Studio saves alone only affect newly created instances.

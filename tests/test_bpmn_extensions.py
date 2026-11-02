@@ -2,7 +2,9 @@
 import asyncio
 from copy import deepcopy
 import importlib.util
+import os
 from pathlib import Path
+import runpy
 import sys
 from types import ModuleType
 import unittest
@@ -15,7 +17,7 @@ env = ModuleType("env")
 env.SYSTEM_VARS = {"_frontend_url": "http://localhost:5173"}
 env.DS = {
     name: {"type": "http-connector", "url": f"http://{name}.local.test"}
-    for name in ("baserow", "sendgrid", "pdf")
+    for name in ("baserow", "emailjs", "pdf")
 }
 spec = importlib.util.spec_from_file_location("profile_types", ROOT / "bpmn_types.py")
 types = importlib.util.module_from_spec(spec)
@@ -56,12 +58,39 @@ def parse_service(xml):
 
 
 class ExtensionTests(unittest.TestCase):
+    def test_emailjs_environment_routes_email_with_existing_payload(self):
+        with patch.dict(os.environ, {"EMAILJS_CONNECTOR_URL": "http://emailjs.local.test"}, clear=True), \
+                patch("dotenv.load_dotenv"):
+            datasources = runpy.run_path(str(ROOT / "env.py"))["DS"]
+        with patch.dict(env.DS, datasources, clear=True):
+            xml = service_xml(connector_id="emailjs", url="/email").replace(
+                '<fipu:inputParameter name="url">/email</fipu:inputParameter>',
+                '<fipu:inputParameter name="url">/email</fipu:inputParameter>'
+                '<fipu:inputParameter name="url_parameter"><fipu:map>'
+                '<fipu:entry key="to">${student_email}</fipu:entry>'
+                '<fipu:entry key="template">student_after_approval</fipu:entry>'
+                '</fipu:map></fipu:inputParameter>')
+            task = parse_service(xml)
+        response = Mock(status_code=200)
+        response.json.return_value = {}
+        with patch.object(types.requests, "post", return_value=response) as request:
+            asyncio.run(task.run({"student_email": "student@local.test"}, "synthetic-instance"))
+        request.assert_called_once_with(
+            "http://emailjs.local.test/email",
+            params={"to": "student@local.test", "template": "student_after_approval"},
+            json={"_frontend_url": "http://localhost:5173"},
+        )
+
     def test_shipped_models_have_identical_legacy_and_fipu_contracts(self):
-        for name in ("A", "B", "edited"):
+        for name in ("A", "B"):
             with self.subTest(model=name):
                 xml = (ROOT / "models" / f"strucna_praksa_{name}.bpmn").read_text()
                 self.assertNotIn(types.NS["camunda"], xml)
                 current = parse_objects(xml)
+                for task_id in ("slanje_potvrde_student_email", "slanje_potvrde_mentor_email"):
+                    inputs = current[task_id]["input_variables"]
+                    self.assertNotIn("attachment_name", inputs)
+                    self.assertEqual(inputs["pdf_attachment_url"], "${pdf_attachment_url}")
                 self.assertEqual(current, parse_objects(xml.replace(
                     types.NS["fipu"], types.NS["camunda"])))
                 self.assertEqual(current, parse_objects(xml.replace("<fipu:", "<execution:")

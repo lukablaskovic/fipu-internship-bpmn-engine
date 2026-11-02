@@ -14,6 +14,6 @@ DB = {
 }
 DS = {
     "baserow": {"type": "http-connector", "url": os.getenv("BASEROW_CONNECTOR_URL")},
-    "sendgrid": {"type": "http-connector", "url": os.getenv("SENDGRID_CONNECTOR_URL")},
+    "emailjs": {"type": "http-connector", "url": os.getenv("EMAILJS_CONNECTOR_URL")},
     "pdf": {"type": "http-connector", "url": os.getenv("PDF_CONNECTOR_URL")},
 }

@@ -334,9 +334,24 @@ class StartEvent(Event):
     pass
 
 
+@bpmn_tag("bpmn:intermediateCatchEvent")
+class IntermediateCatchEvent(Event):
+    def parse(self, element):
+        super().parse(element)
+        definitions = [node for node in element if node.tag.endswith("EventDefinition")]
+        if len(definitions) != 1 or definitions[0].tag != f"{{{NS['bpmn']}}}messageEventDefinition":
+            raise ValueError("Only message Intermediate Catch Events are supported")
+
+
 @bpmn_tag("bpmn:endEvent")
 class EndEvent(Event):
-    pass
+    def parse(self, element):
+        super().parse(element)
+        self.terminate = element.find("bpmn:terminateEventDefinition", NS) is not None
+        ns = extension_namespaces(element)
+        self.outcome = element.get(f"{{{ns['ext']}}}outcome", "finished")
+        if self.outcome not in ("finished", "cancelled") or (self.outcome != "finished" and not self.terminate):
+            raise ValueError("Cancelled outcomes require a Terminate End Event")
 
 
 @bpmn_tag("bpmn:gateway")
