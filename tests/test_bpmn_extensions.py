@@ -81,7 +81,7 @@ class ExtensionTests(unittest.TestCase):
             json={"_frontend_url": "http://localhost:5173"},
         )
 
-    def test_shipped_models_have_identical_legacy_and_fipu_contracts(self):
+    def test_shipped_models_use_fipu_contracts(self):
         for name in ("A", "B"):
             with self.subTest(model=name):
                 xml = (ROOT / "models" / f"strucna_praksa_{name}.bpmn").read_text()
@@ -91,8 +91,8 @@ class ExtensionTests(unittest.TestCase):
                     inputs = current[task_id]["input_variables"]
                     self.assertNotIn("attachment_name", inputs)
                     self.assertEqual(inputs["pdf_attachment_url"], "${pdf_attachment_url}")
-                self.assertEqual(current, parse_objects(xml.replace(
-                    types.NS["fipu"], types.NS["camunda"])))
+                with self.assertRaisesRegex(ValueError, "Unsupported Camunda"):
+                    parse_objects(xml.replace(types.NS["fipu"], types.NS["camunda"]))
                 self.assertEqual(current, parse_objects(xml.replace("<fipu:", "<execution:")
                                                         .replace("</fipu:", "</execution:")
                                                         .replace(" fipu:", " execution:")
@@ -112,7 +112,7 @@ class ExtensionTests(unittest.TestCase):
         xml = service_xml().replace("<fipu:connectorId>",
             f'<legacy:connectorId xmlns:legacy="{types.NS["camunda"]}">')
         xml = xml.replace("</fipu:connectorId>", "</legacy:connectorId>")
-        with self.assertRaisesRegex(ValueError, "Mixed FIPU and Camunda"):
+        with self.assertRaisesRegex(ValueError, "Unsupported Camunda"):
             parse_service(xml)
 
     def test_invalid_connector_configuration_is_rejected_before_execution(self):

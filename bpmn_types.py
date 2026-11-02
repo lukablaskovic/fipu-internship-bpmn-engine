@@ -13,17 +13,10 @@ NS = {
 
 
 def extension_namespaces(element):
-    """Read the FIPU profile or a legacy Camunda profile, never combine them."""
-    used = {
-        namespace
-        for node in element.iter()
-        for name in (node.tag, *node.attrib)
-        for namespace in (NS["fipu"], NS["camunda"])
-        if name.startswith("{" + namespace + "}")
-    }
-    if len(used) > 1:
-        raise ValueError(f"Mixed FIPU and Camunda extensions on {element.get('id', element.tag)}")
-    return {**NS, "ext": next(iter(used), NS["fipu"])}
+    for node in element.iter():
+        if any(name.startswith("{" + NS["camunda"] + "}") for name in (node.tag, *node.attrib)):
+            raise ValueError("Unsupported Camunda execution extension")
+    return {**NS, "ext": NS["fipu"]}
 
 
 BPMN_MAPPINGS = {}

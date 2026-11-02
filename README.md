@@ -15,9 +15,7 @@ keys; output expressions are not evaluated. User-task input/output extensions
 are preserved by the editor but only declared form fields are accepted by the
 engine. Gateway conditions use exact `key:value` string equality.
 
-Legacy `http://camunda.org/schema/1.0/bpmn` extensions remain readable. XML prefixes
-are arbitrary; namespace URIs decide the profile. Mixing both profiles within a
-process is rejected rather than choosing one silently. Service/send tasks must
+Execution extensions must use the FIPU namespace. XML prefixes are arbitrary. Service/send tasks must
 define one registered HTTP connector with a supported method and a relative URL
 without path traversal. Script parameters and malformed connector configuration
 fail when the model is loaded, before a workflow starts.

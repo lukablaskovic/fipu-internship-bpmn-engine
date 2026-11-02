@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:fipu="urn:fipu:bpmn:1">
   <bpmn:process id="correction" name="Synthetic application correction">
     <bpmn:startEvent id="start" />
     <bpmn:userTask id="application">
-      <bpmn:extensionElements><camunda:formData>
-        <camunda:formField id="description" type="string" />
-        <camunda:formField id="details" type="string" />
-        <camunda:formField id="confirmed" type="boolean" />
-      </camunda:formData></bpmn:extensionElements>
+      <bpmn:extensionElements><fipu:formData>
+        <fipu:formField id="description" type="string" />
+        <fipu:formField id="details" type="string" />
+        <fipu:formField id="confirmed" type="boolean" />
+      </fipu:formData></bpmn:extensionElements>
     </bpmn:userTask>
     <bpmn:userTask id="review">
-      <bpmn:extensionElements><camunda:formData>
-        <camunda:formField id="approved" type="string" />
-      </camunda:formData></bpmn:extensionElements>
+      <bpmn:extensionElements><fipu:formData>
+        <fipu:formField id="approved" type="string" />
+      </fipu:formData></bpmn:extensionElements>
     </bpmn:userTask>
     <bpmn:exclusiveGateway id="decision" default="return" />
     <bpmn:userTask id="diary" />
