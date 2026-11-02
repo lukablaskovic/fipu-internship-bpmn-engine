@@ -5,6 +5,7 @@ from pprint import pprint
 from copy import deepcopy
 from collections import defaultdict, deque
 from functools import partial
+import time
 import asyncio
 import requests
 import db_connector
@@ -76,7 +77,7 @@ class BpmnModel:
             # Parse all elements in the process
             for tag, _type in BPMN_MAPPINGS.items():
                 for e in process.findall(f"{tag}", NS):
-                    t = _type()
+                    t = TimerCatchEvent() if _type is IntermediateCatchEvent and e.find("bpmn:timerEventDefinition", NS) is not None else _type()
                     t.parse(e)
                     if isinstance(t, CallActivity):
                         self.subprocesses[t.called_element] = t.deployment
@@ -152,6 +153,7 @@ class BpmnInstance:
         self.incident = None
         self.retry_attempt = None
         self.submission_lock = asyncio.Lock()
+        self.timer_due = {}
         self.runner = None
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
@@ -167,7 +169,8 @@ class BpmnInstance:
             "completed_activity_ids": sorted(self.completed_activity_ids),
             "state": self.state,
             "model": {**self.model.to_json(), "version": self.version},
-            "pending": [x._id for x in self.pending if not isinstance(x, IntermediateCatchEvent)],
+            "pending": [x._id for x in self.pending if not isinstance(x, (IntermediateCatchEvent, TimerCatchEvent))],
+            "pending_timers": self.timer_due.copy(),
             "available_events": [x._id for x in self.pending if isinstance(x, IntermediateCatchEvent)],
             "triggered_events": self.triggered_events,
             "active_event": self.active_event,
@@ -198,6 +201,13 @@ class BpmnInstance:
                 for p in l.get("pending"):
                     pending_elements_list.append(self.model.elements[p])
                 self.pending = pending_elements_list
+                self.timer_due = {key: due for key, due in self.timer_due.items() if key in l["pending"] and key != l["activity_id"]}
+                for timer in self.pending:
+                    if isinstance(timer, TimerCatchEvent) and timer._id not in self.timer_due:
+                        stamp = l["timestamp"]
+                        if isinstance(stamp, str):
+                            stamp = datetime.fromisoformat(stamp)
+                        self.timer_due[timer._id] = stamp.timestamp() + timer.seconds
                 self.variables.update(l.get("activity_variables"))
                 activity = self.model.elements[l["activity_id"]]
                 # Termination also clears pending on waiting gateways logged before the final event.
@@ -228,13 +238,14 @@ class BpmnInstance:
                     event = self.model.elements[flow.target]
                     if isinstance(event, ParallelGateway) and event.incoming <= 1:
                         branches.append(event)
-                    elif isinstance(event, IntermediateCatchEvent) and event._id not in pending_ids and event._id not in self.triggered_events:
+                    elif isinstance(event, IntermediateCatchEvent) and event._id == "odustajanje_od_prakse" and event._id not in pending_ids and event._id not in self.triggered_events:
                         self.pending.append(deepcopy(event))
                         pending_ids.add(event._id)
         return self
 
     def apply_rollback(self, event):
         self.pending = [deepcopy(self.model.elements[key]) for key in event["pending"]]
+        self.timer_due = {key: due for key, due in self.timer_due.items() if key in event["pending"]}
         self.variables["_evaluation_generation"] = event["activity_variables"]["generation"]
         self.active_event = None
         self.incident = None
@@ -296,7 +307,12 @@ class BpmnInstance:
                 # Helper variables dict
                 before_variables = deepcopy(self.variables)
 
-                if isinstance(current, IntermediateCatchEvent):
+                if isinstance(current, TimerCatchEvent):
+                    if time.time() < self.timer_due[current._id]:
+                        continue
+                    del self.timer_due[current._id]
+                    can_continue = True
+                elif isinstance(current, IntermediateCatchEvent):
                     if not (message and message.task_id == current._id):
                         continue
                     queue.popleft()
@@ -344,6 +360,7 @@ class BpmnInstance:
                     del self.pending[idx]
                     if isinstance(current, EndEvent) and current.terminate:
                         self.pending = []
+                        self.timer_due.clear()
                         outcome = current.outcome
                     break
 
@@ -375,6 +392,8 @@ class BpmnInstance:
                 for next_task in next_tasks:
                     if next_task not in self.pending:
                         self.pending.append(next_task)
+                        if isinstance(next_task, TimerCatchEvent):
+                            self.timer_due[next_task._id] = time.time() + next_task.seconds
                         # log("-----> Adding", next_task)
                     # log("n", next_task)
                     if isinstance(next_task, ParallelGateway):
@@ -409,7 +428,11 @@ class BpmnInstance:
                     if queue[0].submission_id is not None:
                         raise ValueError("Queued submission does not match a pending task")
                     queue.popleft()
-                queue.append(await in_queue.get())
+                timeout = max(0, min(self.timer_due.values()) - time.time()) if self.timer_due else None
+                try:
+                    queue.append(await asyncio.wait_for(in_queue.get(), timeout))
+                except asyncio.TimeoutError:
+                    pass
 
         log("DONE")
         self.state = outcome

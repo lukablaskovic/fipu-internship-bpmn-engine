@@ -439,7 +439,7 @@ async def handle_event(request):
     if instance.submission_lock.locked():
         raise web.HTTPConflict(text="Submission is being processed")
     submissions = db_connector.get_pending_submissions(instance_id)
-    if event_id in instance.triggered_events or any(s["task_id"] == event_id for s in submissions):
+    if (event_id in instance.triggered_events and event_id not in [t._id for t in instance.pending]) or any(s["task_id"] == event_id for s in submissions):
         if instance.state == "failed":
             incident = instance.incident
             if incident and not (

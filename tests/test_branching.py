@@ -55,6 +55,36 @@ class BranchingTests(unittest.IsolatedAsyncioTestCase):
         self.runner = asyncio.create_task(self.instance.run())
         await asyncio.sleep(0)
 
+    async def test_timer_recovery_then_none_throw_and_message_wait(self):
+        await self.start('''<bpmn:startEvent id="start"/>
+          <bpmn:intermediateCatchEvent id="timer"><bpmn:timerEventDefinition><bpmn:timeDuration>PT1S</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:intermediateCatchEvent>
+          <bpmn:intermediateThrowEvent id="mark"/>
+          <bpmn:intermediateCatchEvent id="receive"><bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent>
+          <bpmn:endEvent id="end"/>
+          <bpmn:sequenceFlow id="a" sourceRef="start" targetRef="timer"/>
+          <bpmn:sequenceFlow id="b" sourceRef="timer" targetRef="mark"/>
+          <bpmn:sequenceFlow id="c" sourceRef="mark" targetRef="receive"/>
+          <bpmn:sequenceFlow id="d" sourceRef="receive" targetRef="end"/>''')
+        due = self.instance.timer_due["timer"]
+        self.assertEqual(self.instance.to_json()["available_events"], [])
+        self.runner.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await self.runner
+        restored = await self.instance.model.create_instance("recovered", {})
+        await restored.run_from_log(self.records)
+        self.assertAlmostEqual(restored.timer_due["timer"], due, places=2)
+        self.runner = asyncio.create_task(restored.run())
+        async def wait_for_receive():
+            while not restored.to_json()["available_events"]:
+                await asyncio.sleep(.01)
+        await asyncio.wait_for(wait_for_receive(), 2)
+        self.assertGreaterEqual(engine.time.time(), due - .01)
+        self.assertEqual(restored.to_json()["available_events"], ["receive"])
+        self.assertIn("mark", restored.completed_activity_ids)
+        restored.in_queue.put_nowait(engine.UserFormMessage("receive"))
+        await asyncio.wait_for(self.runner, 1)
+        self.assertEqual(restored.state, "finished")
+
     async def test_reloading_source_preserves_live_graph_and_uses_current_file_for_new_instances(self):
         path = Path(self.temp.name) / "source.bpmn"
         xml = f'<bpmn:definitions xmlns:bpmn="{types.NS["bpmn"]}"><bpmn:process id="p" name="Before"><bpmn:startEvent id="start"/></bpmn:process></bpmn:definitions>'

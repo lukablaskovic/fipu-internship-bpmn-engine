@@ -1,3 +1,4 @@
+import re
 import requests
 import os
 import env
@@ -347,6 +348,27 @@ class IntermediateCatchEvent(Event):
         definitions = [node for node in element if node.tag.endswith("EventDefinition")]
         if len(definitions) != 1 or definitions[0].tag != f"{{{NS['bpmn']}}}messageEventDefinition":
             raise ValueError("Only message Intermediate Catch Events are supported")
+
+
+class TimerCatchEvent(Event):
+    def parse(self, element):
+        super().parse(element)
+        definitions = [n for n in element if n.tag.endswith("EventDefinition")]
+        timer = element.find("bpmn:timerEventDefinition", NS)
+        duration = timer.findtext("bpmn:timeDuration", default="", namespaces=NS).strip()
+        match = re.fullmatch(r"P(?:([1-9][0-9]{0,6})D|T([1-9][0-9]{0,6})([HMS]))", duration)
+        if len(definitions) != 1 or len(timer) != 1 or not match:
+            raise ValueError("Expected a single positive timer duration, e.g. PT15M")
+        days, amount, unit = match.groups()
+        self.seconds = int(days) * 86400 if days else int(amount) * {"H": 3600, "M": 60, "S": 1}[unit]
+
+
+@bpmn_tag("bpmn:intermediateThrowEvent")
+class NoneThrowEvent(Event):
+    def parse(self, element):
+        super().parse(element)
+        if any(n.tag.endswith("EventDefinition") or n.tag.endswith("eventDefinitionRef") for n in element):
+            raise ValueError("Only none intermediate throw events are supported")
 
 
 @bpmn_tag("bpmn:endEvent")
