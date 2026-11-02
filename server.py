@@ -131,7 +131,13 @@ async def engine_dashboard(request):
     deployments = []
     for name, loaded in sorted(request.app["bpmn_models"].items()):
         current = BpmnModel(name)
+        versions = []
+        for snapshot in Path("models/history").glob(name + ".*.xml"):
+            number = snapshot.name[len(name) + 1:-4]
+            if number.isascii() and number.isdigit() and 0 < int(number) < current.version:
+                versions.append(int(number))
         deployments.append({
+            "previous_versions": sorted(versions, reverse=True),
             "model_path": name, "version": current.version,
             "process": current.main_process.name,
             "active": sum(i.state not in {"finished", "cancelled"} for i in loaded.instances.values()),
