@@ -1,8 +1,9 @@
 import aiohttp
 import os
+from pathlib import Path
 import sys
 import env
-from utils import access
+from utils import access, diary
 
 from aiohttp import web
 from uuid import UUID, uuid4, uuid5
@@ -174,7 +175,7 @@ async def handle_new_instance(request):
     if not isinstance(data, dict):
         raise web.HTTPBadRequest()
     principal = request["principal"]
-    if not principal["student"]:
+    if principal["coordinator"] or not principal["student"]:
         raise web.HTTPForbidden()
     variables = {"_owner_email": principal["email"], "_owner_student_id": principal["student"]["id"]}
     def created():
@@ -211,9 +212,33 @@ async def handle_new_instance(request):
 
 @routes.post("/instance/{instance_id}/task/{task_id}/form")
 async def handle_form(request):
+    instance_id = request.match_info["instance_id"]
+    task_id = request.match_info["task_id"]
+    if task_id == diary.TASK:
+        model = get_model_for_instance(instance_id)
+        if not model:
+            raise web.HTTPNotFound()
+        instance = model.instances[instance_id]
+        principal = request["principal"]
+        if (principal["student"] or {}).get("process_instance_id") != instance_id or not access.is_owner(principal, instance, get_model_for_instance):
+            raise web.HTTPForbidden()
+        async with instance.diary_lock:
+            previous = db_connector.diary_receipt(instance_id, task_id)
+            if not previous and (instance.active_event or task_id not in [t._id for t in instance.pending] or instance.state != "running"):
+                raise web.HTTPConflict(text="Diary is not pending")
+            fields, files, receipt = await diary.read_diary(request)
+            if previous:
+                if previous != receipt:
+                    raise web.HTTPConflict(text="A different diary was already submitted")
+                return web.json_response({"status": "OK"})
+            row_id = instance.variables["id_dnevnik_prakse"]
+            headers = {"X-Workflow-Token": access.service_token()}
+            for key, column in diary.FILES.items():
+                await access.connector_request("PUT", f"/api/diary/{row_id}/{column}", headers,
+                                               binary=files[key])
+            fields["_diary_receipt"] = receipt
+            return await submit_form(request, instance_id, task_id, fields)
     post = await request.json()
-    instance_id = request.match_info.get("instance_id")
-    task_id = request.match_info.get("task_id")
     return await submit_form(request, instance_id, task_id, post)
 
 
@@ -297,6 +322,8 @@ async def handle_event(request):
         raise web.HTTPBadRequest(text="Message events require JSON")
     if post != {}:
         raise web.HTTPBadRequest(text="Message events accept an empty JSON object")
+    if instance.diary_lock.locked():
+        raise web.HTTPConflict(text="Diary submission is being processed")
     submissions = db_connector.get_pending_submissions(instance_id)
     if event_id in instance.triggered_events:
         if instance.state == "failed":
@@ -482,4 +509,4 @@ if __name__ == "__main__":
     app = run()
     web.run_app(app, port=os.getenv("PORT", 8080))
 
-# conda activate python-bpmn-engine && npx nodemon server.py
+# conda activate fipu-internship-bpmn-engine && npx nodemon server.py

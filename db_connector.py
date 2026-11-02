@@ -59,6 +59,15 @@ def save_submission(instance_id, task_id, form_data):
 
 
 @db_session
+def diary_receipt(instance_id, task_id):
+    submission = PendingSubmission.get(instance_id=instance_id, task_id=task_id)
+    if submission:
+        return submission.form_data.get("_diary_receipt")
+    event = Event.select(lambda e: e.instance_id == instance_id and e.activity_id == task_id).order_by(desc(Event.id)).first()
+    return event.activity_variables.get("_diary_receipt") if event else None
+
+
+@db_session
 def get_pending_submissions(instance_id):
     return [
         {"id": s.id, "task_id": s.task_id, "form_data": json.loads(json.dumps(s.form_data))}
@@ -90,7 +99,7 @@ def add_event(
     model_name, instance_id, activity_id, timestamp, pending, activity_variables,
     submission_id=None, model_xml=None,
 ):
-    Event(
+    event = Event(
         model_name=model_name,
         instance_id=instance_id,
         activity_id=activity_id,
@@ -109,6 +118,8 @@ def add_event(
         submission = PendingSubmission[submission_id]
         if submission.instance_id != instance_id or submission.task_id != activity_id:
             raise ValueError("Submission does not match the completed task")
+        if "_diary_receipt" in submission.form_data and activity_id == "predavanje_dnevnika_student":
+            event.activity_variables["_diary_receipt"] = submission.form_data["_diary_receipt"]
         submission.delete()
     # The transition and inbox consumption must commit together.
     commit()

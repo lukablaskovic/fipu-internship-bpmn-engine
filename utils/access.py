@@ -51,10 +51,10 @@ async def connector_read(request, path):
     return await connector_request("GET", path, headers)
 
 
-async def connector_request(method, path, headers, data=None):
+async def connector_request(method, path, headers, data=None, *, binary=None):
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as session:
-            async with session.request(method, env.DS["baserow"]["url"].rstrip("/") + path, headers=headers, json=data, allow_redirects=False) as response:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60 if binary is not None else 8)) as session:
+            async with session.request(method, env.DS["baserow"]["url"].rstrip("/") + path, headers=headers, json=data, data=binary, allow_redirects=False) as response:
                 if response.status == 401:
                     raise web.HTTPUnauthorized()
                 if response.status == 403:

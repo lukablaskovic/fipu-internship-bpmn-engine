@@ -34,7 +34,10 @@ def serve():
     import asyncio
     import server
     async def coordinator(request, path):
-        return {"coordinator": True, "email": "test@local.test", "student": {"id": 1}}
+        student = {"id": 1}
+        if request.match_info.get("task_id") == "predavanje_dnevnika_student":
+            student["process_instance_id"] = request.match_info["instance_id"]
+        return {"coordinator": True, "email": "test@local.test", "student": student}
     server.access.connector_read = coordinator
     os.environ["WORKFLOW_SERVICE_TOKEN"] = "x" * 32
     from bpmn_model import UserFormMessage, ServiceTask

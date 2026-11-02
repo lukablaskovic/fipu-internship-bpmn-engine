@@ -148,6 +148,7 @@ class BpmnInstance:
         self.version = model.version
         self.variables = deepcopy(variables)
         self.in_queue = in_queue
+        self.diary_lock = asyncio.Lock()
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
         self.process = process
