@@ -34,6 +34,8 @@ def serve():
     import asyncio
     import server
     async def coordinator(request, path):
+        if request.headers.get("X-Test-Role") == "other_student":
+            return {"coordinator": False, "email": "other@local.test", "student": {"id": 2}}
         student = {"id": 1}
         if request.match_info.get("task_id") == "predavanje_dnevnika_student":
             student["process_instance_id"] = request.match_info["instance_id"]
@@ -188,6 +190,21 @@ class PersistenceTests(unittest.TestCase):
             "description": "corrected", "details": {"hours": 0, "note": None},
             "confirmed": False,
         })
+
+    def test_diagram_history_follows_recorded_visits_through_a_return_and_restart(self):
+        self.prepare_correction()  # review rejected the application, which is now pending again.
+        path = f"/instance/{self.instance_id}"
+        for role in ("student", "coordinator"):
+            status, body = self.request("GET", path, role=role)
+            self.assertEqual(status, 200)
+            self.assertEqual(body["completed_activity_ids"], ["application", "decision", "review", "start"])
+            self.assertEqual(body["pending"], ["application"])
+        self.assertEqual(self.request("GET", path, role="other_student")[0], 404)
+        self.create()
+        self.assertEqual(self.wait_for("application")["completed_activity_ids"], ["start"])
+        self.restart()
+        self.assertEqual(self.request("GET", path, role="student")[1]["completed_activity_ids"],
+                         ["application", "decision", "review", "start"])
 
     def test_corrected_values_and_exact_waiting_task_survive_restart(self):
         self.prepare_correction()
@@ -344,6 +361,8 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(body["available_events"], [])
         self.assertEqual(body["variables"]["description"], "preserved")
         self.assertTrue(body["variables"]["withdrawal_saved"])
+        self.assertEqual(set(body["completed_activity_ids"]),
+                         {"odustajanje_od_prakse", "evidentiranje_odustajanja", "end_event_odustajanje"})
         self.assertEqual(self.sql('SELECT running FROM RunningInstance WHERE instance_id=?', (self.instance_id,)), [(0,)])
         self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission WHERE instance_id=?', (self.instance_id,)), [(0,)])
 
@@ -528,6 +547,7 @@ class PersistenceTests(unittest.TestCase):
         data = self.wait_for("application")
         self.assertEqual(data["variables"]["description"], "corrected")
         self.assertEqual(data["variables"]["approved"], "yes")
+        self.assertEqual(data["completed_activity_ids"], ["application", "decision", "review", "start"])
         self.assertEqual(options()[1], [])
         self.assertEqual(self.request("POST", path, {"checkpoint": options()[0]["checkpoint"], "target": "review"})[0], 409)
         moves = self.sql("SELECT activity_variables FROM Event WHERE activity_id='@rollback'")
@@ -547,7 +567,8 @@ class PersistenceTests(unittest.TestCase):
         marker = self.directory / "fail_step"
         marker.write_text("kreiranje_potvrde_profesor")
         self.submit(task, {"detaljan_opis_zadatka": "saved"})
-        self.wait_for_state("failed")
+        failed = self.wait_for_state("failed")
+        self.assertNotIn("kreiranje_potvrde_profesor", failed["completed_activity_ids"])
         path = f"/instance/{self.instance_id}/rollback"
         opts = self.request("GET", path)[1]
         self.assertIn(task, [t["id"] for t in opts["targets"]])

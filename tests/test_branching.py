@@ -100,6 +100,32 @@ class BranchingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.records[-1]["activity_id"], "internship_done")
         self.assertEqual(self.records[-1]["pending"], [])
 
+    async def test_history_replays_a_self_loop_without_completing_an_abandoned_join(self):
+        await self.start('''
+          <bpmn:startEvent id="start"/>
+          <bpmn:parallelGateway id="join"><bpmn:incoming>a</bpmn:incoming><bpmn:incoming>b</bpmn:incoming></bpmn:parallelGateway>
+          <bpmn:userTask id="review"/><bpmn:userTask id="stop"/>
+          <bpmn:endEvent id="end"><bpmn:terminateEventDefinition/></bpmn:endEvent>
+          <bpmn:sequenceFlow id="a" sourceRef="start" targetRef="join"/>
+          <bpmn:sequenceFlow id="work" sourceRef="start" targetRef="review"/>
+          <bpmn:sequenceFlow id="other" sourceRef="start" targetRef="stop"/>
+          <bpmn:sequenceFlow id="repeat" sourceRef="review" targetRef="review"/>
+          <bpmn:sequenceFlow id="b" sourceRef="review" targetRef="join"><bpmn:conditionExpression>approved:yes</bpmn:conditionExpression></bpmn:sequenceFlow>
+          <bpmn:sequenceFlow id="terminate" sourceRef="stop" targetRef="end"/>
+        ''')
+        async def check(expected):
+            restored = await self.instance.model.create_instance("restored", {})
+            await restored.run_from_log(self.records)
+            self.assertEqual(self.instance.completed_activity_ids, expected)
+            self.assertEqual(restored.completed_activity_ids, expected)
+        await check({"start"})
+        await self.instance.in_queue.put(engine.UserFormMessage("review"))
+        await asyncio.sleep(0)
+        await check({"start", "review"})
+        await self.instance.in_queue.put(engine.UserFormMessage("stop"))
+        await asyncio.wait_for(self.runner, 1)
+        await check({"start", "review", "stop", "end"})
+
     async def test_exclusive_gateway_selects_first_match_or_default_only(self):
         content = '''
           <bpmn:startEvent id="start"/>

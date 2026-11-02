@@ -170,6 +170,12 @@ remain available in model listings. Persistence errors stop execution rather tha
 advancing without a checkpoint; after correcting the database problem, restart the
 engine to recover its saved checkpoint and outstanding forms.
 
+Both process diagrams use `completed_activity_ids` from the authorized
+`GET /instance/{instance_id}` response. It lists distinct activities completed in
+that instance, including earlier visits before a return or rollback. The engine
+rebuilds it from persisted checkpoints on restart. A reopened activity can appear in
+both this list and `pending`.
+
 Startup creates the additive `PendingSubmission` table using the existing Pony
 schema setup. Back up the database before upgrading and restart the single engine
 process; do not run old and new workers together. Existing events remain readable,

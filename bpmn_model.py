@@ -156,6 +156,7 @@ class BpmnInstance:
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
         self.process = process
+        self.completed_activity_ids = set()
         self.triggered_events = []
         self.active_event = None
 
@@ -163,6 +164,7 @@ class BpmnInstance:
         return {
             "id": self._id,
             "variables": self.variables,
+            "completed_activity_ids": sorted(self.completed_activity_ids),
             "state": self.state,
             "model": {**self.model.to_json(), "version": self.version},
             "pending": [x._id for x in self.pending if not isinstance(x, IntermediateCatchEvent)],
@@ -185,6 +187,7 @@ class BpmnInstance:
         return ok
 
     async def run_from_log(self, log):
+        self.completed_activity_ids.clear()
         self.triggered_events = []
         self.active_event = None
         for l in log:
@@ -197,6 +200,15 @@ class BpmnInstance:
                 self.pending = pending_elements_list
                 self.variables.update(l.get("activity_variables"))
                 activity = self.model.elements[l["activity_id"]]
+                # Termination also clears pending on waiting gateways logged before the final event.
+                if isinstance(activity, ParallelGateway) and not self.pending and l is not log[-1]:
+                    continue
+                # A waiting checkpoint can name a still-pending node; a direct self-loop reopens it.
+                if activity._id not in l["pending"] or (
+                    not isinstance(activity, ParallelGateway)
+                    and any(flow.target == activity._id for flow in self.model.flow.get(activity._id, ()))
+                ):
+                    self.completed_activity_ids.add(activity._id)
                 if isinstance(activity, IntermediateCatchEvent):
                     self.triggered_events.append(activity._id)
                     self.active_event = activity._id
@@ -385,8 +397,10 @@ class BpmnInstance:
                     ),
                 )
 
-            if can_continue and isinstance(current, IntermediateCatchEvent):
-                self.triggered_events.append(current._id)
+            if can_continue:
+                self.completed_activity_ids.add(current._id)
+                if isinstance(current, IntermediateCatchEvent):
+                    self.triggered_events.append(current._id)
 
             if not can_continue:
                 self.active_event = None
