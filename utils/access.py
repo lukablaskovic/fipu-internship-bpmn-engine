@@ -26,7 +26,10 @@ def signature(*fields):
 
 
 def evaluation_token(instance_id, variables, expires):
-    return signature("evaluation", instance_id, variables["id_alokacija"], variables["poslodavac_email"], expires)
+    fields = ["evaluation", instance_id, variables["id_alokacija"], variables["poslodavac_email"], expires]
+    if "_evaluation_generation" in variables:
+        fields.append(variables["_evaluation_generation"])
+    return signature(*fields)
 
 
 def evaluation_url(instance_id, variables):

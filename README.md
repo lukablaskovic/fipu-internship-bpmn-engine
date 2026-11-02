@@ -209,6 +209,22 @@ connectors use the same operation key across retries of one step. Each subsequen
 visit to that step receives a fresh key. For work interrupted before this upgrade,
 reconcile external writes before restarting because older engines saved no keys.
 
+### Returning to a previous user task
+
+From the student’s diagram a coordinator can choose **Vrati na prethodni zadatak**.
+The selector shows completed user waits on the current execution path, most recent
+first. A modeled loop or another rollback shortens that path. The engine accepts a
+move from a single user wait or a failed connector. Completed or withdrawn instances,
+parallel work, and submissions already in progress are ineligible.
+
+Read `GET /instance/{id}/rollback` for the targets and checkpoint. POST
+`{"target":"<task ID>","checkpoint":<number>}` to the same endpoint. A stale checkpoint
+or unavailable target returns HTTP 409. The engine appends an audited transition,
+retains the current business variables and event subscriptions, and waits for a fresh
+submission. Earlier evaluation links expire on a move. External records, certificates,
+and delivered email retain their history. Completing the reopened task can create
+further records and notifications.
+
 ### Internship withdrawal
 
 Both internship models contain the `odustajanje_od_prakse` Intermediate Message Catch Event. Submit `{}` to `POST /instance/{instance_id}/event/odustajanje_od_prakse`; acknowledgement means the message is durable, not that the connector has finished. Read the instance until `state` is `cancelled` (or `failed`). Repeating the event request after a failed connector/checkpoint resumes from the last committed transition. Completed withdrawal requests are idempotent. A normal form submitted after withdrawal is accepted is rejected with 409.

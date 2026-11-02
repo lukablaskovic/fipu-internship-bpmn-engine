@@ -151,7 +151,8 @@ class BpmnInstance:
         self.in_queue = in_queue
         self.incident = None
         self.retry_attempt = None
-        self.diary_lock = asyncio.Lock()
+        self.submission_lock = asyncio.Lock()
+        self.runner = None
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
         self.process = process
@@ -187,7 +188,9 @@ class BpmnInstance:
         self.triggered_events = []
         self.active_event = None
         for l in log:
-            if l.get("activity_id") in self.model.elements:
+            if l["activity_id"] == "@rollback":
+                self.apply_rollback(l)
+            elif l.get("activity_id") in self.model.elements:
                 pending_elements_list = []
                 for p in l.get("pending"):
                     pending_elements_list.append(self.model.elements[p])
@@ -217,6 +220,12 @@ class BpmnInstance:
                         self.pending.append(deepcopy(event))
                         pending_ids.add(event._id)
         return self
+
+    def apply_rollback(self, event):
+        self.pending = [deepcopy(self.model.elements[key]) for key in event["pending"]]
+        self.variables["_evaluation_generation"] = event["activity_variables"]["generation"]
+        self.active_event = None
+        self.incident = None
 
     async def run_subprocess(self, process_id):
         new_subproces_instance_id = str(uuid4())

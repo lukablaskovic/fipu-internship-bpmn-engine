@@ -493,6 +493,74 @@ class PersistenceTests(unittest.TestCase):
         self.submit("application", {"description": "second"}, status=409)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(1,)])
 
+    def test_rollback_only_offers_completed_tasks_on_the_current_path(self):
+        self.create()
+        path = f"/instance/{self.instance_id}/rollback"
+        def options():
+            status, data = self.request("GET", path)
+            self.assertEqual(status, 200)
+            return data, [t["id"] for t in data["targets"]]
+        first, targets = options()
+        self.assertEqual(targets, [])
+        self.submit("application", {"description": "keep me"})
+        self.wait_for("review")
+        review, targets = options()
+        self.assertEqual(targets, ["application"])
+        for target in ["review", "diary", "decision", "missing"]:
+            self.assertEqual(self.request("POST", path, {"target": target, "checkpoint": review["checkpoint"]})[0], 409)
+        self.submit("review", {"approved": "no"})
+        self.wait_for("application")
+        self.assertEqual(options()[1], [])  # Natural return made review a future task.
+        self.submit("application", {"description": "corrected"})
+        self.wait_for("review")
+        self.submit("review", {"approved": "yes"})
+        self.wait_for("diary")
+        diary, targets = options()
+        self.assertEqual(targets, ["review", "application"])
+        move = {"target": "application", "checkpoint": diary["checkpoint"]}
+        self.assertEqual(self.request("GET", path, role="student")[0], 403)
+        self.assertEqual(self.request("POST", path, move, role="student")[0], 403)
+        self.assertEqual(self.request("POST", path, {**move, "checkpoint": review["checkpoint"]})[0], 409)
+        self.assertEqual(self.request("POST", path, move)[0], 200)
+        self.assertEqual(self.request("POST", path, move)[0], 409)
+        self.submit("diary", {}, status=409)
+        self.restart()
+        data = self.wait_for("application")
+        self.assertEqual(data["variables"]["description"], "corrected")
+        self.assertEqual(data["variables"]["approved"], "yes")
+        self.assertEqual(options()[1], [])
+        self.assertEqual(self.request("POST", path, {"checkpoint": options()[0]["checkpoint"], "target": "review"})[0], 409)
+        moves = self.sql("SELECT activity_variables FROM Event WHERE activity_id='@rollback'")
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(json.loads(moves[0][0])["actor"], "test@local.test")
+        self.submit("application", {"description": "after move"})
+        self.wait_for("review")
+        (self.directory / "pause_delivery").touch()
+        move["checkpoint"] = options()[0]["checkpoint"]
+        self.submit("review", {"approved": "yes"})
+        self.assertEqual(options()[1], [])
+        self.assertEqual(self.request("POST", path, move)[0], 409)
+
+    def test_rollback_from_failed_connector_reopens_form_and_preserves_withdrawal(self):
+        task = "ispunjavanje_prijavnice_student"
+        self.prepare_internship(task=task)
+        marker = self.directory / "fail_step"
+        marker.write_text("kreiranje_potvrde_profesor")
+        self.submit(task, {"detaljan_opis_zadatka": "saved"})
+        self.wait_for_state("failed")
+        path = f"/instance/{self.instance_id}/rollback"
+        opts = self.request("GET", path)[1]
+        self.assertIn(task, [t["id"] for t in opts["targets"]])
+        self.assertEqual(self.request("POST", path, {"target": task, "checkpoint": opts["checkpoint"]})[0], 200)
+        self.assertEqual(self.request("GET", "/engine")[1]["incidents"], [])
+        self.restart()
+        data = self.wait_for(task)
+        self.assertEqual(data["variables"]["detaljan_opis_zadatka"], "saved")
+        self.assertIn("odustajanje_od_prakse", data["available_events"])
+        marker.unlink()
+        self.submit(task, {"detaljan_opis_zadatka": "edited"})
+        self.wait_for("predavanje_dnevnika_student")
+
     def test_deletion_removes_pending_submissions(self):
         self.create()
         (self.directory / "pause_delivery").touch()

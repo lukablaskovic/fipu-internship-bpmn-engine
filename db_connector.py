@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 DB = Database()
 
 
+ROLLBACK = "@rollback"
+
+
 class Event(DB.Entity):
     model_name = Required(str)
     instance_id = Required(str)
@@ -110,7 +113,7 @@ def diary_receipt(instance_id, task_id):
     submission = PendingSubmission.get(instance_id=instance_id, task_id=task_id)
     if submission:
         return submission.form_data.get("_diary_receipt")
-    event = Event.select(lambda e: e.instance_id == instance_id and e.activity_id == task_id).order_by(desc(Event.id)).first()
+    event = Event.select(lambda e: e.instance_id == instance_id and e.activity_id in (task_id, ROLLBACK)).order_by(desc(Event.id)).first()
     return event.activity_variables.get("_diary_receipt") if event else None
 
 
@@ -172,6 +175,25 @@ def add_event(
         ConnectorAttempt[attempt_id].closed = True
     # The transition and inbox consumption must commit together.
     commit()
+
+
+@db_session
+def rollback_history(iid):
+    return [(event.id, event.activity_id, list(event.pending)) for event in
+            Event.select(lambda e: e.instance_id == iid).order_by(Event.id)]
+
+
+@db_session
+def record_rollback(instance, source, target, pending, actor):
+    if not InstanceDefinition.get(instance_id=instance._id):
+        InstanceDefinition(instance_id=instance._id, xml=instance.model.xml)
+    event = Event(instance_id=instance._id, model_name=instance.model.model_path,
+                  activity_id=ROLLBACK, timestamp=datetime.now(), pending=pending,
+                  activity_variables={"from": source, "to": target, "actor": actor,
+                                      "generation": str(uuid4())})
+    if instance.incident:
+        ConnectorAttempt[instance.incident["attempt_id"]].closed = True
+    return event.to_dict()
 
 
 @db_session

@@ -8,7 +8,7 @@ from utils import access, diary
 from aiohttp import web
 from uuid import UUID, uuid4, uuid5
 import asyncio
-from bpmn_model import BpmnModel, UserFormMessage, UserTask, IntermediateCatchEvent, get_model_for_instance, reload_model, forget_instance
+from bpmn_model import ServiceTask, BpmnModel, UserFormMessage, UserTask, IntermediateCatchEvent, get_model_for_instance, reload_model, forget_instance
 import aiohttp_cors
 import db_connector
 from functools import reduce
@@ -59,7 +59,7 @@ def start_runner(instance):
             submission["task_id"], submission["form_data"], submission["id"]
         ))
     instance.state = "running"
-    asyncio.create_task(instance.run())
+    instance.runner = asyncio.create_task(instance.run())
 
 
 # Get all models
@@ -224,7 +224,7 @@ async def handle_new_instance(request):
         raise web.HTTPConflict(text="Student already has an internship")
     current = reload_model(request.app["bpmn_models"], model)
     instance = await current.create_instance(_id, variables)
-    asyncio.create_task(instance.run())
+    instance.runner = asyncio.create_task(instance.run())
     return created()
 
 
@@ -240,7 +240,7 @@ async def handle_form(request):
         principal = request["principal"]
         if (principal["student"] or {}).get("process_instance_id") != instance_id or not access.is_owner(principal, instance):
             raise web.HTTPForbidden()
-        async with instance.diary_lock:
+        async with instance.submission_lock:
             previous = db_connector.diary_receipt(instance_id, task_id)
             if not previous and (instance.active_event or task_id not in [t._id for t in instance.pending] or instance.state != "running"):
                 raise web.HTTPConflict(text="Diary is not pending")
@@ -256,8 +256,12 @@ async def handle_form(request):
                                                binary=files[key])
             fields["_diary_receipt"] = receipt
             return await submit_form(request, instance_id, task_id, fields)
-    post = await request.json()
-    return await submit_form(request, instance_id, task_id, post)
+    model = get_model_for_instance(instance_id)
+    if not model:
+        raise web.HTTPNotFound()
+    async with model.instances[instance_id].submission_lock:
+        post = await request.json()
+        return await submit_form(request, instance_id, task_id, post)
 
 
 async def submit_form(request, instance_id, task_id, post):
@@ -328,6 +332,70 @@ async def resume_instance(instance, actor="", attempt_id=None):
     start_runner(instance)
 
 
+@routes.get("/instance/{instance_id}/rollback")
+@routes.post("/instance/{instance_id}/rollback")
+async def rollback_instance(request):
+    iid = request.match_info["instance_id"]
+    body = None
+    if request.method == "POST":
+        try:
+            body = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            raise web.HTTPBadRequest()
+        if not isinstance(body, dict) or type(body.get("checkpoint")) is not int or not isinstance(body.get("target"), str):
+            raise web.HTTPBadRequest(text="Expected checkpoint and target task")
+
+    model = get_model_for_instance(iid)
+    if not model:
+        raise web.HTTPNotFound()
+    instance = model.instances[iid]
+    history = db_connector.rollback_history(iid)
+    elements = model.process_elements[instance.process]
+    past = []
+    source = None
+    checkpoint = 0
+    for checkpoint, completed, pending in history:
+        if completed == source and isinstance(elements.get(completed), UserTask):
+            past.append(completed)
+        work = [key for key in pending if not isinstance(elements.get(key), IntermediateCatchEvent)]
+        source = work[0] if len(work) == 1 else None
+        # A modeled return or coordinator move makes later visits future steps again.
+        for key in pending:
+            if key in past:
+                del past[past.index(key):]
+    eligible = (
+        (instance.state == "running" and instance.runner and isinstance(elements.get(source), UserTask))
+        or (instance.state == "failed" and instance.incident and source == instance.incident["task_id"]
+            and isinstance(elements.get(source), ServiceTask))
+    )
+    if not eligible or instance.active_event or instance.submission_lock.locked() or db_connector.get_pending_submissions(iid):
+        past = []
+    if body is None:
+        return web.json_response({"checkpoint": checkpoint, "source": source,
+                                  "targets": [{"id": key, "name": elements[key].name or key} for key in reversed(past)]})
+    if checkpoint != body["checkpoint"] or body["target"] not in past:
+        raise web.HTTPConflict(text="Task is not behind the current checkpoint")
+
+    target = body["target"]
+    was_failed = instance.state == "failed"
+    # Failed event commits can leave uncommitted changes in the runner's variables.
+    if was_failed:
+        saved = db_connector.get_running_instances_log(instance_id=iid)[0][iid]["events"]
+    subscriptions = [t._id for t in instance.pending if isinstance(t, IntermediateCatchEvent)]
+    event = db_connector.record_rollback(instance, source, target,
+                                         [target, *subscriptions],
+                                         request["principal"]["email"])
+    if was_failed:
+        instance.variables = {}
+        await instance.run_from_log(saved)
+    # A new execution token needs fresh gateway counters, just as it would after restart.
+    if instance.runner and not instance.runner.done():
+        instance.runner.cancel()
+    instance.apply_rollback(event)
+    start_runner(instance)
+    return web.json_response({"status": "OK"})
+
+
 @routes.post("/instance/{instance_id}/retry")
 async def retry_connector(request):
     iid = request.match_info["instance_id"]
@@ -368,8 +436,8 @@ async def handle_event(request):
         raise web.HTTPBadRequest(text="Message events require JSON")
     if post != {}:
         raise web.HTTPBadRequest(text="Message events accept an empty JSON object")
-    if instance.diary_lock.locked():
-        raise web.HTTPConflict(text="Diary submission is being processed")
+    if instance.submission_lock.locked():
+        raise web.HTTPConflict(text="Submission is being processed")
     submissions = db_connector.get_pending_submissions(instance_id)
     if event_id in instance.triggered_events or any(s["task_id"] == event_id for s in submissions):
         if instance.state == "failed":
