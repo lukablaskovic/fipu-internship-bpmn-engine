@@ -33,6 +33,10 @@ def serve():
     sys.path.insert(0, str(ROOT))
     import asyncio
     import server
+    async def coordinator(request, path):
+        return {"coordinator": True, "email": "test@local.test", "student": {"id": 1}}
+    server.access.connector_read = coordinator
+    os.environ["WORKFLOW_SERVICE_TOKEN"] = "x" * 32
     from bpmn_model import UserFormMessage, ServiceTask
     from aiohttp import web
 
@@ -411,6 +415,7 @@ class PersistenceTests(unittest.TestCase):
         (self.directory / "pause_delivery").touch()
         self.submit("application", {"description": "delete me"})
         self.assertEqual(self.request("DELETE", f"/instance/{self.instance_id}")[0], 200)
+        self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[0], 404)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM PendingSubmission'), [(0,)])
         self.restart()
         self.assertEqual(self.request("GET", f"/instance/{self.instance_id}")[0], 404)

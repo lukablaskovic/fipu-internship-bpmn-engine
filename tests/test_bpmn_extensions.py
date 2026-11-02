@@ -169,10 +169,11 @@ class ExtensionTests(unittest.TestCase):
         response = Mock(status_code=201)
         response.json.return_value = {"prijavnica_id": 12, "ignored": "value"}
         state = {"student_name": "Synthetic", "choice": "Test"}
-        with patch.object(types.requests, "post", return_value=response) as request:
+        with patch.object(types.access, "service_token", return_value="test-token"), patch.object(types.requests, "post", return_value=response) as request:
             asyncio.run(task.run(state, "synthetic-instance"))
         request.assert_called_once_with(
             "http://baserow.local.test/api/prijavnica", params={},
+            headers={"X-Workflow-Token": "test-token"}, allow_redirects=False,
             json={"name": "Synthetic", "id_instance": "synthetic-instance",
                   "choices": ["Test", ""], "details": {"name": "Synthetic", "empty": ""},
                   "_frontend_url": "http://localhost:5173"},

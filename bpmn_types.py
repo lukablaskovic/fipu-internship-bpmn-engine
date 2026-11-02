@@ -3,6 +3,7 @@ import os
 import env
 from urllib.parse import unquote, urlsplit
 from utils.common import parse_expression
+from utils import access
 
 NS = {
     "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
@@ -192,7 +193,8 @@ class ServiceTask(Task):
         identifiers = connector.findall("ext:connectorId", ns)
         if len(identifiers) != 1 or identifiers[0].text not in env.DS:
             raise ValueError(f"Task {self._id} has an unknown or missing connector ID")
-        datasource = env.DS[identifiers[0].text]
+        self.datasource_id = identifiers[0].text
+        datasource = env.DS[self.datasource_id]
         if datasource["type"] != "http-connector":
             raise ValueError(f"Task {self._id} uses an unsupported connector type")
         inputs = self.connector_fields["input_variables"]
@@ -273,10 +275,16 @@ class ServiceTask(Task):
             else:
                 call_function = requests.get
 
+            options = {}
+            if self.datasource_id == "baserow":
+                options = {"headers": {"X-Workflow-Token": access.service_token()}, "allow_redirects": False}
+            if self.datasource_id == "emailjs" and "evaluacija_url" in data:
+                data["evaluacija_url"] = access.evaluation_url(instance_id, variables)
             response = call_function(
                 url,
                 params=parameters,
                 json=data,
+                **options,
             )
 
         if response.status_code not in (200, 201):

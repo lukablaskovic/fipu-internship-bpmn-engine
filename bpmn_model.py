@@ -19,6 +19,12 @@ def get_model_for_instance(iid):
     return instance_models.get(iid, None)
 
 
+def forget_instance(iid):
+    model = instance_models.pop(iid, None)
+    if model:
+        model.instances.pop(iid, None)
+
+
 def reload_model(models, name):
     current = BpmnModel(name)
     # Existing instances keep their graph; new instances use the current source file.

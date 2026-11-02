@@ -2,11 +2,12 @@ import aiohttp
 import os
 import sys
 import env
+from utils import access
 
 from aiohttp import web
 from uuid import UUID, uuid4, uuid5
 import asyncio
-from bpmn_model import BpmnModel, UserFormMessage, UserTask, IntermediateCatchEvent, get_model_for_instance, reload_model
+from bpmn_model import BpmnModel, UserFormMessage, UserTask, IntermediateCatchEvent, get_model_for_instance, reload_model, forget_instance
 import aiohttp_cors
 import db_connector
 from functools import reduce
@@ -49,6 +50,48 @@ async def run_as_server(app):
 # Get all models
 # Model.search
 from types import SimpleNamespace
+
+
+@routes.get("/status")
+async def health(request):
+    return web.json_response({"status": "ok"})
+
+
+@web.middleware
+async def authorize(request, handler):
+    name = handler.__name__
+    if request.method == "OPTIONS" or request.match_info.http_exception is not None or name == "health":
+        return await handler(request)
+    instance_id = request.match_info.get("instance_id")
+    if name == "employer_evaluation":
+        token = request.headers.get("X-Evaluation-Token")
+        if not token:
+            raise web.HTTPUnauthorized()
+        model = get_model_for_instance(instance_id)
+        instance = model and model.instances.get(instance_id)
+        if not instance or not access.valid_evaluation(token, instance):
+            raise web.HTTPForbidden()
+        if instance.state != "running" or instance.active_event or access.EVALUATION not in [t._id for t in instance.pending]:
+            raise web.HTTPConflict(text="Evaluation has closed")
+    else:
+        principal = request["principal"] = await access.connector_read(request, "/api/session")
+        if not principal["coordinator"]:
+            if name not in {"get_model", "handle_new_instance", "handle_instance_info", "handle_task_info", "handle_form", "handle_event"}:
+                raise web.HTTPForbidden()
+            if instance_id:
+                model = get_model_for_instance(instance_id)
+                instance = model and model.instances.get(instance_id)
+                if not instance or not access.is_owner(principal, instance, get_model_for_instance):
+                    raise web.HTTPNotFound()
+                if name == "handle_form" and request.match_info["task_id"] not in access.STUDENT_TASKS:
+                    raise web.HTTPForbidden()
+                if name == "handle_event" and request.match_info["event_id"] != "odustajanje_od_prakse":
+                    raise web.HTTPForbidden()
+                if name in {"handle_form", "handle_event"} and (principal["student"] or {}).get("process_instance_id") != instance_id:
+                    raise web.HTTPForbidden()
+    response = await handler(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @routes.get("/model")
@@ -98,7 +141,13 @@ async def handle_new_instance(request):
     data = await request.json() if request.can_read_body else {}
     if not isinstance(data, dict):
         raise web.HTTPBadRequest()
-    variables = {}
+    principal = request["principal"]
+    if not principal["student"]:
+        raise web.HTTPForbidden()
+    variables = {"_owner_email": principal["email"], "_owner_student_id": principal["student"]["id"]}
+    def created():
+        return web.json_response({"id": _id, "binding": access.signature("bind", principal["email"], _id,
+                                 model.removeprefix("strucna_praksa_").removesuffix(".bpmn"), previous_id)})
     previous_id = data.get("previous_instance_id")
     if previous_id is not None:
         try:
@@ -106,20 +155,26 @@ async def handle_new_instance(request):
         except ValueError:
             raise web.HTTPBadRequest(text="Invalid previous instance ID")
         previous = get_model_for_instance(str(previous_uuid))
-        if previous is None or previous.instances[str(previous_uuid)].state != "cancelled":
+        if not previous or not access.is_owner(principal, previous.instances[str(previous_uuid)], get_model_for_instance):
+            raise web.HTTPNotFound()
+        if previous.instances[str(previous_uuid)].state != "cancelled":
             raise web.HTTPConflict(text="Previous internship must be withdrawn")
         # A retry after a failed student-record update reuses the same successor.
         _id = str(uuid5(previous_uuid, "next-internship"))
         existing = get_model_for_instance(_id)
         if existing:
+            if not access.is_owner(principal, existing.instances[_id], get_model_for_instance):
+                raise web.HTTPForbidden()
             if existing.model_path != model:
                 raise web.HTTPConflict(text="Another model was already selected")
-            return web.json_response({"id": _id})
+            return created()
         variables["previous_instance_id"] = str(previous_uuid)
+    if (principal["student"].get("process_instance_id") or None) != previous_id:
+        raise web.HTTPConflict(text="Student already has an internship")
     current = reload_model(request.app["bpmn_models"], model)
     instance = await current.create_instance(_id, variables)
     asyncio.create_task(instance.run())
-    return web.json_response({"id": _id})
+    return created()
 
 
 @routes.post("/instance/{instance_id}/task/{task_id}/form")
@@ -127,16 +182,42 @@ async def handle_form(request):
     post = await request.json()
     instance_id = request.match_info.get("instance_id")
     task_id = request.match_info.get("task_id")
+    return await submit_form(request, instance_id, task_id, post)
+
+
+async def submit_form(request, instance_id, task_id, post):
     m = get_model_for_instance(instance_id)
     if m is None or instance_id not in m.instances:
         raise web.HTTPNotFound()
     instance = m.instances[instance_id]
     if not isinstance(post, dict):
         raise web.HTTPBadRequest(text="Form data must be a JSON object")
-    if instance.state != "running" or instance.active_event:
-        raise web.HTTPConflict(text="Instance is not running")
-    if not any(isinstance(t, UserTask) and t._id == task_id for t in instance.pending):
-        raise web.HTTPConflict(text="Task is not waiting for a form")
+    def require_pending():
+        if instance.state != "running" or instance.active_event:
+            raise web.HTTPConflict(text="Instance is not running")
+        if not any(isinstance(t, UserTask) and t._id == task_id for t in instance.pending):
+            raise web.HTTPConflict(text="Task is not waiting for a form")
+
+    require_pending()
+    principal = request.get("principal")
+    if task_id in {"odabiranje_zadatka_student", "model_b_direktna_prijava_student"}:
+        student = principal["student"]
+        if not student or student.get("process_instance_id") != instance_id or not access.is_owner(principal, instance, get_model_for_instance):
+            raise web.HTTPForbidden()
+        post.update(JMBAG=student["JMBAG"], Student=[student["id"]], student_email=principal["email"],
+                    student_ime=student["ime"], student_prezime=student["prezime"],
+                    student_godina_studija=(student.get("godina_studija") or {}).get("value"),
+                    frontend_url=env.SYSTEM_VARS["_frontend_url"], process_instance_id=instance_id)
+        if task_id == "model_b_direktna_prijava_student":
+            allocation = await access.connector_request("POST", "/api/alokacija/direct",
+                {"X-Workflow-Token": access.service_token()}, {"id_instance": instance_id, "Student": post["Student"],
+                "JMBAG": post["JMBAG"], "Napomena": post.get("napomena")})
+            require_pending()
+            post.update(id_alokacija=allocation["id_alokacija"], Alocirani_zadatak=[instance.variables["id_zadatak"]])
+    if task_id == "alociranje_profesor":
+        for key in ("Student", "JMBAG"):
+            if key in instance.variables:
+                post[key] = instance.variables[key]
     try:
         if any(s["task_id"] == task_id for s in db_connector.get_pending_submissions(instance_id)):
             raise web.HTTPConflict(text="Task already has an accepted submission")
@@ -277,7 +358,36 @@ async def handle_instance_info(request):
         raise aiohttp.web.HTTPNotFound
     instance = m.instances[instance_id].to_json()
 
+    if not request["principal"]["coordinator"]:
+        instance["model"]["instances"] = [instance_id]
     return web.json_response(instance)
+
+
+@routes.get("/instance/{instance_id}/evaluation-link")
+async def coordinator_evaluation_link(request):
+    iid = request.match_info["instance_id"]
+    model = get_model_for_instance(iid)
+    if not model or access.EVALUATION not in [t._id for t in model.instances[iid].pending]:
+        raise web.HTTPConflict(text="No pending evaluation")
+    return web.json_response({"url": access.evaluation_url(iid, model.instances[iid].variables)})
+
+
+@routes.get("/evaluation/{instance_id}")
+@routes.post("/evaluation/{instance_id}")
+async def employer_evaluation(request):
+    iid = request.match_info["instance_id"]
+    instance = get_model_for_instance(iid).instances[iid]
+    if request.method == "POST":
+        data = await request.json()
+        if not access.valid_evaluation(request.headers["X-Evaluation-Token"], instance):
+            raise web.HTTPForbidden()
+        if data not in ({"kandidat_odobren": "true"}, {"kandidat_odobren": "false"}):
+            raise web.HTTPBadRequest(text="Expected an evaluation decision")
+        return await submit_form(request, iid, access.EVALUATION, data)
+    fields = ("student_ime", "student_prezime", "student_email", "student_godina_studija", "Alocirani_zadatak",
+              "opis_zadatka", "poslodavac_naziv", "poslodavac_email")
+    return web.json_response({"variables": {k: instance.variables.get(k) for k in fields},
+                              "task": instance.model.elements[access.EVALUATION].get_info()})
 
 
 @routes.delete("/instance/{instance_id}")
@@ -285,6 +395,7 @@ async def delete_instance(request):
     instance_id = request.match_info.get("instance_id")
     response = db_connector.delete_instance(instance_id)
     if response["status"] == "success":
+        forget_instance(instance_id)
         return web.json_response(
             {"status": "ok", "message": "Instance deleted successfully."}
         )
@@ -308,7 +419,8 @@ app = None
 
 def run():
     global app
-    app = web.Application()
+    access.service_token()
+    app = web.Application(middlewares=[authorize])
     app.on_startup.append(run_as_server)
     app.add_routes(routes)
 
