@@ -70,20 +70,7 @@ async def connector_request(method, path, headers, data=None, *, binary=None):
         raise web.HTTPServiceUnavailable(text="Identity service unavailable")
 
 
-def is_owner(principal, instance, lookup):
-    row = principal["student"] or {}
+def is_owner(principal, instance):
     owner = instance.variables.get("_owner_student_id")
-    if owner:
-        return owner == row.get("id") and instance.variables["_owner_email"] == principal["email"]
-    # Legacy instances predate the owner checkpoint. Never trust a submitted email.
-    iid = row.get("process_instance_id")
-    while iid:
-        if iid == instance._id:
-            return True
-        model = lookup(iid)
-        current = model and model.instances.get(iid)
-        if not current or current.variables.get("_owner_student_id") != row.get("id") or current.variables.get("_owner_email") != principal["email"]:
-            break
-        # Only follow predecessors attested when a protected successor was created.
-        iid = current.variables.get("previous_instance_id")
-    return False
+    return bool(owner and owner == (principal["student"] or {}).get("id")
+                and instance.variables.get("_owner_email") == principal["email"])

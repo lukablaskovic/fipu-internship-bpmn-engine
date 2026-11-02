@@ -87,7 +87,7 @@ async def authorize(request, handler):
             if instance_id:
                 model = get_model_for_instance(instance_id)
                 instance = model and model.instances.get(instance_id)
-                if not instance or not access.is_owner(principal, instance, get_model_for_instance):
+                if not instance or not access.is_owner(principal, instance):
                     raise web.HTTPNotFound()
                 if name == "handle_form" and request.match_info["task_id"] not in access.STUDENT_TASKS:
                     raise web.HTTPForbidden()
@@ -188,7 +188,7 @@ async def handle_new_instance(request):
         except ValueError:
             raise web.HTTPBadRequest(text="Invalid previous instance ID")
         previous = get_model_for_instance(str(previous_uuid))
-        if not previous or not access.is_owner(principal, previous.instances[str(previous_uuid)], get_model_for_instance):
+        if not previous or not access.is_owner(principal, previous.instances[str(previous_uuid)]):
             raise web.HTTPNotFound()
         if previous.instances[str(previous_uuid)].state != "cancelled":
             raise web.HTTPConflict(text="Previous internship must be withdrawn")
@@ -196,7 +196,7 @@ async def handle_new_instance(request):
         _id = str(uuid5(previous_uuid, "next-internship"))
         existing = get_model_for_instance(_id)
         if existing:
-            if not access.is_owner(principal, existing.instances[_id], get_model_for_instance):
+            if not access.is_owner(principal, existing.instances[_id]):
                 raise web.HTTPForbidden()
             if existing.model_path != model:
                 raise web.HTTPConflict(text="Another model was already selected")
@@ -220,7 +220,7 @@ async def handle_form(request):
             raise web.HTTPNotFound()
         instance = model.instances[instance_id]
         principal = request["principal"]
-        if (principal["student"] or {}).get("process_instance_id") != instance_id or not access.is_owner(principal, instance, get_model_for_instance):
+        if (principal["student"] or {}).get("process_instance_id") != instance_id or not access.is_owner(principal, instance):
             raise web.HTTPForbidden()
         async with instance.diary_lock:
             previous = db_connector.diary_receipt(instance_id, task_id)
@@ -259,7 +259,7 @@ async def submit_form(request, instance_id, task_id, post):
     principal = request.get("principal")
     if task_id in {"odabiranje_zadatka_student", "model_b_direktna_prijava_student"}:
         student = principal["student"]
-        if not student or student.get("process_instance_id") != instance_id or not access.is_owner(principal, instance, get_model_for_instance):
+        if not student or student.get("process_instance_id") != instance_id or not access.is_owner(principal, instance):
             raise web.HTTPForbidden()
         post.update(JMBAG=student["JMBAG"], Student=[student["id"]], student_email=principal["email"],
                     student_ime=student["ime"], student_prezime=student["prezime"],
