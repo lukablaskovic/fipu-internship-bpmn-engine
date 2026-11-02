@@ -22,7 +22,7 @@ fail when the model is loaded, before a workflow starts.
 
 `models/` contains exactly the authoritative A/B files. Studio and MCP edit these files; the dashboard reads them through `GET /model/<filename>` with caching disabled. The obsolete edited/example model was removed (no local instances used it). Before deploying this removal elsewhere, check for instances referencing that legacy filename.
 
-Every new instance reparses its current model file. Existing live instances retain their already-loaded graph and remain discoverable through the shared instance registry. Restart recovery still reads the current files: preserve task/form IDs and review graph compatibility for existing instances. There is no public model-write endpoint on the engine; Studio's local authoring service owns revision-checked file writes. No restart or snapshot sync is needed for new instances after a model edit.
+Every new instance reparses its current model file. Existing live instances retain their already-loaded graph and remain discoverable through the shared instance registry. Restart recovery uses the saved instance definition. Older checkpoints without one use the current model until their next connector attempt pins it. There is no public model-write endpoint on the engine; Studio's local authoring service owns revision-checked file writes. No restart or snapshot sync is needed for new instances after a model edit.
 
 Run `python -m unittest discover -s tests -v` in an environment with the engine
 requirements installed. The extension tests stub configuration and HTTP calls;
@@ -189,9 +189,25 @@ writes, atomic inbox consumption, completed instances, duplicates, and deletion.
 The actual A/B models are also checked from the application step to diary waiting;
 those tests stub connector execution and use only synthetic data.
 
-This is single-process recovery, not distributed worker coordination. External
-connector effects (Baserow writes, email, PDF) are not atomic with engine events and
-can repeat if a crash occurs after the external effect but before its event commit.
+### Recovering an automated step
+
+The coordinator's **BPMN engine** page lists failed or interrupted connector attempts.
+After fixing the underlying problem, choose **Ponovi ovaj korak**. Check delivery
+before confirming an email resend. The engine resumes from the last committed
+transition on the same instance. The accepted form stays in its event history.
+
+`GET /engine` includes open incidents. A coordinator can send the displayed
+`attempt_id` to `POST /instance/{instance_id}/retry`, with `confirm_resend: true`
+for email. HTTP 202 acknowledges the retry. A stale attempt returns 409. Each retry
+records the coordinator and UTC time. An engine restart leaves an unconfirmed
+connector attempt paused, including a crash after the remote service responded.
+
+Deploy the Baserow and PDF connectors first, then the single engine process and
+dashboard. Startup creates the additive `ConnectorAttempt` table. Include hidden
+receipt files when preserving the PDF service's `potvrde/` directory. Both
+connectors use the same operation key across retries of one step. Each subsequent
+visit to that step receives a fresh key. For work interrupted before this upgrade,
+reconcile external writes before restarting because older engines saved no keys.
 
 ### Internship withdrawal
 

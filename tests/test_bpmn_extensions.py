@@ -77,7 +77,7 @@ class ExtensionTests(unittest.TestCase):
             asyncio.run(task.run({"student_email": "student@local.test"}, "synthetic-instance"))
         request.assert_called_once_with(
             "http://emailjs.local.test/email",
-            params={"to": "student@local.test", "template": "student_after_approval"},
+            timeout=(5, 60), params={"to": "student@local.test", "template": "student_after_approval"},
             json={"_frontend_url": "http://localhost:5173"},
         )
 
@@ -172,7 +172,7 @@ class ExtensionTests(unittest.TestCase):
         with patch.object(types.access, "service_token", return_value="test-token"), patch.object(types.requests, "post", return_value=response) as request:
             asyncio.run(task.run(state, "synthetic-instance"))
         request.assert_called_once_with(
-            "http://baserow.local.test/api/prijavnica", params={},
+            "http://baserow.local.test/api/prijavnica", params={}, timeout=(5, 60),
             headers={"X-Workflow-Token": "test-token"}, allow_redirects=False,
             json={"name": "Synthetic", "id_instance": "synthetic-instance",
                   "choices": ["Test", ""], "details": {"name": "Synthetic", "empty": ""},

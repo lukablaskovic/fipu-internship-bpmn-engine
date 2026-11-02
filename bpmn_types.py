@@ -154,6 +154,8 @@ class UserTask(Task):
 
 @bpmn_tag("bpmn:serviceTask")
 class ServiceTask(Task):
+    operation_key = None
+
     def __init__(self):
         self.properties_fields = {}
         self.input_variables = {}
@@ -273,15 +275,18 @@ class ServiceTask(Task):
                 options = {"headers": {"X-Workflow-Token": access.service_token()}, "allow_redirects": False}
             if self.datasource_id == "emailjs" and "evaluacija_url" in data:
                 data["evaluacija_url"] = access.evaluation_url(instance_id, variables)
+            if self.operation_key and self.datasource_id in {"baserow", "pdf"}:
+                options.setdefault("headers", {})["Idempotency-Key"] = self.operation_key
             response = call_function(
                 url,
                 params=parameters,
                 json=data,
+                timeout=(5, 60),
                 **options,
             )
 
         if response.status_code not in (200, 201):
-            raise Exception(response.text)
+            raise requests.HTTPError(response=response)
 
         # Check for output variables
         if self.output_variables:

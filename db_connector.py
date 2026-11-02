@@ -1,5 +1,6 @@
 from pony.orm import *
-from datetime import datetime
+from datetime import datetime, timezone
+from uuid import uuid4
 import env
 import os
 import logging
@@ -40,6 +41,52 @@ class RunningInstance(DB.Entity):
 class InstanceDefinition(DB.Entity):
     instance_id = PrimaryKey(str)
     xml = Required(LongStr)
+
+
+class ConnectorAttempt(DB.Entity):
+    instance_id = Required(str, index=True)
+    task_id = Required(str)
+    operation_key = Required(str)
+    started = Required(datetime, precision=6)
+    retried_by = Optional(str)
+    closed = Required(bool, default=False)
+    error = Optional(str)
+
+    def details(self):
+        return {"attempt_id": self.id, "task_id": self.task_id,
+                "started": self.started.isoformat() + "Z", "retried_by": self.retried_by,
+                "error": self.error or "Ishod prethodnog pokušaja nije potvrđen."}
+
+
+@db_session
+def start_attempt(instance_id, task_id, previous_id=None, actor="", legacy_xml=None):
+    if legacy_xml and not InstanceDefinition.get(instance_id=instance_id):
+        InstanceDefinition(instance_id=instance_id, xml=legacy_xml)
+    key = str(uuid4())
+    if previous_id is not None:
+        previous = ConnectorAttempt.get_for_update(id=previous_id, instance_id=instance_id,
+                                                  task_id=task_id, closed=False)
+        if previous is None:
+            return None
+        key = previous.operation_key
+        previous.closed = True
+    attempt = ConnectorAttempt(instance_id=instance_id, task_id=task_id, operation_key=key,
+                               started=datetime.now(timezone.utc).replace(tzinfo=None), retried_by=actor)
+    flush()
+    return attempt.id, key
+
+
+@db_session
+def fail_attempt(attempt_id, error):
+    attempt = ConnectorAttempt[attempt_id]
+    attempt.error = error
+    return attempt.details()
+
+
+@db_session
+def open_attempt(instance_id):
+    attempt = ConnectorAttempt.get(instance_id=instance_id, closed=False)
+    return attempt.details() if attempt else None
 
 
 class PendingSubmission(DB.Entity):
@@ -97,7 +144,7 @@ def setup_db():
 @db_session
 def add_event(
     model_name, instance_id, activity_id, timestamp, pending, activity_variables,
-    submission_id=None, model_xml=None,
+    submission_id=None, model_xml=None, attempt_id=None,
 ):
     event = Event(
         model_name=model_name,
@@ -121,6 +168,8 @@ def add_event(
         if "_diary_receipt" in submission.form_data and activity_id == "predavanje_dnevnika_student":
             event.activity_variables["_diary_receipt"] = submission.form_data["_diary_receipt"]
         submission.delete()
+    if attempt_id is not None:
+        ConnectorAttempt[attempt_id].closed = True
     # The transition and inbox consumption must commit together.
     commit()
 
@@ -140,6 +189,7 @@ def delete_instance(instance_id):
             Event.select(lambda e: e.instance_id == instance_id).delete()
             PendingSubmission.select(lambda s: s.instance_id == instance_id).delete()
 
+            ConnectorAttempt.select(lambda a: a.instance_id == instance_id).delete()
             InstanceDefinition.select(lambda d: d.instance_id == instance_id).delete()
             instance_to_delete.delete()
             commit()
@@ -160,9 +210,11 @@ def delete_instance(instance_id):
 
 
 @db_session
-def get_running_instances_log(running_only=True, include_definition=False):
+def get_running_instances_log(running_only=True, include_definition=False, instance_id=None):
     log = []
-    instances = RunningInstance.select(lambda i: i.running or not running_only)[:]
+    instances = RunningInstance.select(lambda i: i.running or not running_only)
+    if instance_id is not None:
+        instances = instances.filter(lambda i: i.instance_id == instance_id)
     for instance in instances:
         events = Event.select(
             lambda e: e.instance_id == instance.instance_id

@@ -6,6 +6,7 @@ from copy import deepcopy
 from collections import defaultdict, deque
 from functools import partial
 import asyncio
+import requests
 import db_connector
 from datetime import datetime
 import os
@@ -148,6 +149,8 @@ class BpmnInstance:
         self.version = model.version
         self.variables = deepcopy(variables)
         self.in_queue = in_queue
+        self.incident = None
+        self.retry_attempt = None
         self.diary_lock = asyncio.Lock()
         self.state = "initialized"
         self.pending = deepcopy(self.model.process_pending[process])
@@ -233,8 +236,9 @@ class BpmnInstance:
     async def run(self):
         try:
             return await self._run()
-        except BaseException:
+        except Exception:
             self.state = "failed"
+            self.incident = self.incident or db_connector.open_attempt(self._id)
             raise
 
     async def _run(self):
@@ -266,6 +270,7 @@ class BpmnInstance:
             # Helper current dictionary
             current_and_variables_dict = {}
 
+            attempt_id = None
             for idx, current in enumerate(self.pending):
                 # Helper variables dict
                 before_variables = deepcopy(self.variables)
@@ -285,7 +290,20 @@ class BpmnInstance:
                     can_continue = current.run(self.variables, message.form_data)
                 elif isinstance(current, ServiceTask):
                     log("DOING:", current)
-                    can_continue = await current.run(self.variables, _id)
+                    attempt = self.retry_attempt or db_connector.start_attempt(
+                        _id, current._id, legacy_xml=self.model.xml if self.version is None else None
+                    )
+                    self.retry_attempt = None
+                    attempt_id, current.operation_key = attempt
+                    try:
+                        can_continue = await current.run(self.variables, _id)
+                    except Exception as exc:
+                        reason = "Provjerite dostupnost i konfiguraciju servisa."
+                        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                            reason = f"Servis je vratio HTTP {exc.response.status_code}."
+                        self.variables = before_variables
+                        self.incident = db_connector.fail_attempt(attempt_id, reason)
+                        raise RuntimeError(reason) from None
                 elif isinstance(current, CallActivity):
                     # TODO implement Variables tab CallActivity
                     log("DOING:", current)
@@ -348,6 +366,7 @@ class BpmnInstance:
                     model_xml=self.model.xml,
                     instance_id=self._id,
                     activity_id=c,
+                    attempt_id=attempt_id if c == current._id else None,
                     timestamp=datetime.now(),
                     pending=[pending._id for pending in self.pending],
                     activity_variables=current_and_variables_dict[c],

@@ -43,14 +43,23 @@ async def run_as_server(app):
                 if not data["xml"]:
                     instance.version = None
                 instance = await instance.run_from_log(data["events"])
-                for submission in db_connector.get_pending_submissions(key):
-                    if isinstance(instance.model.elements.get(submission["task_id"]), IntermediateCatchEvent):
-                        instance.active_event = submission["task_id"]
-                    instance.in_queue.put_nowait(UserFormMessage(
-                        submission["task_id"], submission["form_data"], submission["id"]
-                    ))
-                if instance.pending:
-                    asyncio.create_task(instance.run())
+                instance.incident = db_connector.open_attempt(key)
+                if instance.incident:
+                    instance.state = "failed"
+                elif instance.pending:
+                    start_runner(instance)
+
+
+def start_runner(instance):
+    instance.in_queue = asyncio.Queue()
+    for submission in db_connector.get_pending_submissions(instance._id):
+        if isinstance(instance.model.elements.get(submission["task_id"]), IntermediateCatchEvent):
+            instance.active_event = submission["task_id"]
+        instance.in_queue.put_nowait(UserFormMessage(
+            submission["task_id"], submission["form_data"], submission["id"]
+        ))
+    instance.state = "running"
+    asyncio.create_task(instance.run())
 
 
 # Get all models
@@ -143,7 +152,16 @@ async def engine_dashboard(request):
             "process": current.main_process.name,
             "active": sum(i.state not in {"finished", "cancelled"} for i in loaded.instances.values()),
         })
-    return web.json_response({"deployments": deployments})
+    incidents = []
+    for model in request.app["bpmn_models"].values():
+        for instance in model.instances.values():
+            if instance.incident:
+                task = instance.model.elements.get(instance.incident["task_id"])
+                incidents.append({**instance.incident, "instance_id": instance._id,
+                                  "model": model.model_path, "version": instance.version,
+                                  "task": task.name if task else None,
+                                  "connector": task.datasource_id if hasattr(task, "datasource_id") else None})
+    return web.json_response({"deployments": deployments, "incidents": incidents})
 
 
 @routes.get("/instance/{instance_id}/model")
@@ -288,21 +306,49 @@ async def submit_form(request, instance_id, task_id, post):
     return web.json_response({"status": "OK"})
 
 
-async def resume_instance(instance):
-    for record in db_connector.get_running_instances_log():
-        if instance._id in record:
-            instance.variables = {}
-            await instance.run_from_log(record[instance._id]["events"])
-            instance.in_queue = asyncio.Queue()
-            for submission in db_connector.get_pending_submissions(instance._id):
-                instance.active_event = submission["task_id"]
-                instance.in_queue.put_nowait(UserFormMessage(
-                    submission["task_id"], submission["form_data"], submission["id"]
-                ))
-            instance.state = "running"
-            asyncio.create_task(instance.run())
-            return
-    raise web.HTTPConflict(text="No running checkpoint to resume")
+async def resume_instance(instance, actor="", attempt_id=None):
+    record = db_connector.get_running_instances_log(instance_id=instance._id)
+    if not record:
+        raise web.HTTPConflict(text="No running checkpoint to resume")
+    instance.variables = {}
+    await instance.run_from_log(record[0][instance._id]["events"])
+    if instance.incident:
+        incident = instance.incident
+        task_id = incident["task_id"]
+        task = next((t for t in instance.pending if t._id == task_id), None)
+        if not task or incident["attempt_id"] != attempt_id:
+            raise web.HTTPConflict(text="Failed step has changed")
+        attempt = db_connector.start_attempt(instance._id, task_id, attempt_id, actor)
+        if attempt is None:
+            raise web.HTTPConflict(text="Attempt already retried")
+        instance.pending.remove(task)
+        instance.pending.insert(0, task)
+        instance.retry_attempt = attempt
+        instance.incident = None
+    start_runner(instance)
+
+
+@routes.post("/instance/{instance_id}/retry")
+async def retry_connector(request):
+    iid = request.match_info["instance_id"]
+    model = get_model_for_instance(iid)
+    if not model:
+        raise web.HTTPNotFound()
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise web.HTTPBadRequest()
+    if not isinstance(body, dict) or type(body.get("attempt_id")) is not int:
+        raise web.HTTPBadRequest(text="Expected attempt ID")
+    instance = model.instances[iid]
+    incident = instance.incident
+    if instance.state != "failed" or not incident or incident["attempt_id"] != body["attempt_id"]:
+        raise web.HTTPConflict(text="Attempt is no longer pending")
+    task = model.elements.get(incident["task_id"])
+    if getattr(task, "datasource_id", None) == "emailjs" and body.get("confirm_resend") is not True:
+        raise web.HTTPConflict(text="Email may already have been delivered")
+    await resume_instance(instance, request["principal"]["email"], incident["attempt_id"])
+    return web.json_response({"status": "accepted"}, status=202)
 
 
 @routes.post("/instance/{instance_id}/event/{event_id}")
@@ -325,14 +371,15 @@ async def handle_event(request):
     if instance.diary_lock.locked():
         raise web.HTTPConflict(text="Diary submission is being processed")
     submissions = db_connector.get_pending_submissions(instance_id)
-    if event_id in instance.triggered_events:
+    if event_id in instance.triggered_events or any(s["task_id"] == event_id for s in submissions):
         if instance.state == "failed":
-            # Retry from the committed checkpoint, including a failed connector write.
-            await resume_instance(instance)
-        return web.json_response({"status": "OK"})
-    if any(s["task_id"] == event_id for s in submissions):
-        if instance.state == "failed":
-            await resume_instance(instance)
+            incident = instance.incident
+            if incident and not (
+                event_id == "odustajanje_od_prakse" and incident["task_id"] == "evidentiranje_odustajanja"
+                and getattr(model.elements.get(incident["task_id"]), "datasource_id", None) == "baserow"
+            ):
+                raise web.HTTPConflict(text="Coordinator recovery required")
+            await resume_instance(instance, request["principal"]["email"], incident and incident["attempt_id"])
         return web.json_response({"status": "OK"})
     if instance.state != "running" or event_id not in [t._id for t in instance.pending] or submissions:
         raise web.HTTPConflict(text="Event is not available or a form is being processed")

@@ -37,7 +37,9 @@ def serve():
         student = {"id": 1}
         if request.match_info.get("task_id") == "predavanje_dnevnika_student":
             student["process_instance_id"] = request.match_info["instance_id"]
-        return {"coordinator": True, "email": "test@local.test", "student": student}
+        creating = request.method == "POST" and request.path.startswith("/model/")
+        is_student = creating or request.headers.get("X-Test-Role") == "student"
+        return {"coordinator": not is_student, "email": "test@local.test", "student": student}
     server.access.connector_read = coordinator
     os.environ["WORKFLOW_SERVICE_TOKEN"] = "x" * 32
     from bpmn_model import UserFormMessage, ServiceTask
@@ -45,6 +47,8 @@ def serve():
 
     if Path("stub_connectors").exists():
         async def run_service(self, variables, instance_id):
+            if Path("fail_step").exists() and Path("fail_step").read_text() == self._id:
+                raise RuntimeError("Sensitive connector response must stay private")
             if self._id == "evidentiranje_odustajanja":
                 if Path("fail_withdrawal").exists():
                     raise RuntimeError("Synthetic connector failure")
@@ -111,10 +115,10 @@ class PersistenceTests(unittest.TestCase):
         self.stop()
         self.start()
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, role="coordinator"):
         data = json.dumps(body).encode() if body is not None else None
         req = Request(self.url + path, data=data, method=method,
-                      headers={"Content-Type": "application/json"})
+                      headers={"Content-Type": "application/json", "X-Test-Role": role})
         try:
             with urlopen(req, timeout=3) as response:
                 return response.status, json.load(response)
@@ -317,7 +321,7 @@ class PersistenceTests(unittest.TestCase):
         self.sql("""INSERT INTO Event(model_name, instance_id, activity_id,
                     timestamp, pending, activity_variables) VALUES (?, ?, ?, ?, ?, ?)""",
                  (filename, self.instance_id, task, "2020-01-01 00:00:00",
-                  json.dumps([task]), json.dumps({"description": "preserved"})))
+                  json.dumps([task]), json.dumps({"description": "preserved", "_owner_student_id": 1, "_owner_email": "test@local.test"})))
         self.start()
         body = self.wait_for(task)
         self.assertIn("odustajanje_od_prakse", body["available_events"])
@@ -387,6 +391,65 @@ class PersistenceTests(unittest.TestCase):
                 self.assertEqual(body["pending"], [])
                 self.assertEqual(body["available_events"], [])
                 self.assertTrue(body["variables"]["withdrawal_saved"])
+
+    def test_coordinator_recovers_pinned_application_without_resubmission(self):
+        application = "ispunjavanje_prijavnice_student"
+        for task, email in [("kreiranje_potvrde_profesor", False), ("slanje_potvrde_student_email", True)]:
+            with self.subTest(task=task):
+                self.prepare_internship(task=application)
+                model = self.directory / "models/strucna_praksa_A.bpmn"
+                self.sql("INSERT INTO InstanceDefinition(instance_id, xml) VALUES (?, ?)",
+                         (self.instance_id, model.read_text()))
+                self.restart()
+                marker = self.directory / "fail_step"
+                marker.write_text(task)
+                self.submit(application, {"detaljan_opis_zadatka": "Synthetic application"})
+                self.wait_for_state("failed")
+                marker.unlink()
+                model.write_text(model.read_text().replace('id="' + task + '"', 'id="changed"')
+                                 .replace('Ref="' + task + '"', 'Ref="changed"'))
+                self.restart()
+                self.wait_for_state("failed")
+                incidents = self.request("GET", "/engine")[1]["incidents"]
+                self.assertEqual(len(incidents), 1)
+                incident = incidents[0]
+                self.assertEqual(incident["task_id"], task)
+                self.assertNotIn("Sensitive", json.dumps(incident))
+                path = f"/instance/{self.instance_id}/retry"
+                body = {"attempt_id": incident["attempt_id"]}
+                self.assertEqual(self.request("POST", path, body, role="student")[0], 403)
+                if email:
+                    self.assertEqual(self.request("POST", path, body)[0], 409)
+                    body["confirm_resend"] = True
+                self.assertEqual(self.request("POST", path, body)[0], 202)
+                self.assertEqual(self.request("POST", path, body)[0], 409)
+                state = self.wait_for("predavanje_dnevnika_student")
+                self.assertEqual(state["variables"]["connector_description"], "Synthetic application")
+                self.assertEqual(self.request("GET", "/engine")[1]["incidents"], [])
+                self.assertEqual(self.sql("SELECT count(DISTINCT operation_key), count(*), sum(closed) "
+                                          "FROM ConnectorAttempt WHERE instance_id=? AND task_id=?",
+                                          (self.instance_id, task)), [(1, 2, 2)])
+                self.assertEqual(self.sql("SELECT retried_by FROM ConnectorAttempt WHERE id > ? AND task_id=?",
+                                          (incident["attempt_id"], task)), [("test@local.test",)])
+                self.assertEqual(self.sql("SELECT count(*) FROM Event WHERE instance_id=? AND activity_id=?",
+                                          (self.instance_id, "azuriranje_podataka_profesor")), [(1,)])
+
+    def test_crash_after_email_delivery_does_not_resend_on_startup(self):
+        self.prepare_internship()
+        self.sql("""CREATE TRIGGER lose_ack BEFORE INSERT ON Event
+                    WHEN NEW.activity_id = 'slanje_potvrde_student_email'
+                    BEGIN SELECT RAISE(ABORT, 'synthetic checkpoint failure'); END""")
+        self.submit("ispunjavanje_prijavnice_student", {})
+        self.wait_for_state("failed")
+        self.sql("DROP TRIGGER lose_ack")
+        self.restart()
+        self.wait_for_state("failed")
+        incident, = self.request("GET", "/engine")[1]["incidents"]
+        self.assertEqual(incident["connector"], "emailjs")
+        path = f"/instance/{self.instance_id}/retry"
+        self.assertEqual(self.request("POST", path, {"attempt_id": incident["attempt_id"]})[0], 409)
+        self.assertEqual(self.sql("SELECT count(*) FROM ConnectorAttempt WHERE task_id=?",
+                                  (incident["task_id"],)), [(1,)])
 
     def test_withdrawal_failure_can_be_retried_without_repeating_the_message(self):
         self.prepare_internship()
