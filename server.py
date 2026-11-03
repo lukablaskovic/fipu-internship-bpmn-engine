@@ -208,8 +208,8 @@ async def handle_new_instance(request):
         previous = get_model_for_instance(str(previous_uuid))
         if not previous or not access.is_owner(principal, previous.instances[str(previous_uuid)]):
             raise web.HTTPNotFound()
-        if previous.instances[str(previous_uuid)].state != "cancelled":
-            raise web.HTTPConflict(text="Previous internship must be withdrawn")
+        if previous.instances[str(previous_uuid)].state not in {"finished", "cancelled"}:
+            raise web.HTTPConflict(text="Previous internship must be finished or withdrawn")
         # A retry after a failed student-record update reuses the same successor.
         _id = str(uuid5(previous_uuid, "next-internship"))
         existing = get_model_for_instance(_id)
