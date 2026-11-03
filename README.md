@@ -172,7 +172,8 @@ engine to recover its saved checkpoint and outstanding forms.
 
 Both process diagrams use `completed_activity_ids` from the authorized
 `GET /instance/{instance_id}` response. It lists distinct activities completed in
-that instance, including earlier visits before a return or rollback. The engine
+the current path. A rollback removes highlights from the reopened visit onward.
+Superseded visits remain in the event log. The engine
 rebuilds it from persisted checkpoints on restart. A reopened activity can appear in
 both this list and `pending`.
 

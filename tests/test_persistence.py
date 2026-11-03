@@ -592,6 +592,23 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(options()[1], [])
         self.assertEqual(self.request("POST", path, move)[0], 409)
 
+    def test_rollback_removes_superseded_diagram_visits_but_keeps_events(self):
+        self.create()
+        self.submit("application", {})
+        self.wait_for("review")
+        self.submit("review", {"approved": "yes"})
+        self.wait_for("diary")
+        path = f"/instance/{self.instance_id}/rollback"
+        checkpoint = self.request("GET", path)[1]["checkpoint"]
+        self.assertEqual(self.request("POST", path, {"target": "review", "checkpoint": checkpoint})[0], 200)
+        self.assertEqual(self.wait_for("review")["completed_activity_ids"], ["application", "start"])
+        self.restart()
+        self.assertEqual(self.wait_for("review")["completed_activity_ids"], ["application", "start"])
+        self.submit("review", {"approved": "no"})
+        self.assertEqual(self.wait_for("application")["completed_activity_ids"], ["application", "decision", "review", "start"])
+        decisions = self.sql("SELECT activity_variables FROM Event WHERE activity_id='review' ORDER BY id")
+        self.assertEqual([json.loads(row[0])["approved"] for row in decisions], ["yes", "no"])
+
     def test_rollback_from_failed_connector_reopens_form_and_preserves_withdrawal(self):
         task = "ispunjavanje_prijavnice_student"
         self.prepare_internship(task=task)

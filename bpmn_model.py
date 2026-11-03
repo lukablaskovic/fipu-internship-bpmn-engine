@@ -159,9 +159,13 @@ class BpmnInstance:
         self.elements = deepcopy(self.model.process_elements[process])
         self.pending = [self.elements[node._id] for node in self.model.process_pending[process]]
         self.process = process
-        self.completed_activity_ids = set()
+        self.completed_path = []
         self.triggered_events = []
         self.active_event = None
+
+    @property
+    def completed_activity_ids(self):
+        return set(self.completed_path)
 
     def to_json(self):
         return {
@@ -206,7 +210,7 @@ class BpmnInstance:
 
     async def run_from_log(self, log):
         self.elements = deepcopy(self.model.process_elements[self.process])
-        self.completed_activity_ids.clear()
+        self.completed_path.clear()
         self.triggered_events = []
         self.active_event = None
         for l in log:
@@ -234,7 +238,7 @@ class BpmnInstance:
                     not isinstance(activity, ParallelGateway)
                     and any(flow.target == activity._id for flow in self.model.flow.get(activity._id, ()))
                 ):
-                    self.completed_activity_ids.add(activity._id)
+                    self.completed_path.append(activity._id)
                     # Replay routing without repeating connector effects to rebuild partial joins.
                     if isinstance(activity, ParallelGateway):
                         activity.run()
@@ -267,6 +271,11 @@ class BpmnInstance:
         return self
 
     def apply_rollback(self, event):
+        # Reopen the most recent visit to this task on the surviving path.
+        target = event["activity_variables"]["to"]
+        while self.completed_path:
+            if self.completed_path.pop() == target:
+                break
         self.elements = deepcopy(self.model.process_elements[self.process])
         self.pending = [self.elements[key] for key in event["pending"]]
         self.timer_due = {key: due for key, due in self.timer_due.items() if key in event["pending"]}
@@ -417,7 +426,7 @@ class BpmnInstance:
                 )
 
             if can_continue:
-                self.completed_activity_ids.add(current._id)
+                self.completed_path.append(current._id)
                 if isinstance(current, IntermediateCatchEvent):
                     self.triggered_events.append(current._id)
 
