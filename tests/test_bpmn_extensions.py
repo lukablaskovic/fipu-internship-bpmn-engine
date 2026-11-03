@@ -137,6 +137,19 @@ class ExtensionTests(unittest.TestCase):
             with self.subTest(xml=xml), self.assertRaises(ValueError):
                 parse_service(xml)
 
+    def test_evaluation_link_uses_only_loopback_or_configured_origin(self):
+        variables = {"id_alokacija": 12, "poslodavac_email": "employer@example.test"}
+        configured = "https://praksa.example.test"
+        with patch.dict(types.access.env.SYSTEM_VARS, {"_frontend_url": configured}), \
+             patch.object(types.access, "service_token", return_value="test-key"), \
+             patch.object(types.access.time, "time", return_value=100):
+            original = types.access.evaluation_url("instance", variables)
+            for origin in ("http://localhost:5174", "http://127.0.0.1:5173", "http://[::1]:5173"):
+                self.assertEqual(types.access.evaluation_url("instance", variables, origin),
+                                 original.replace(configured, origin))
+            for origin in (None, "null", "https://localhost.example.test", "http://localhost@evil.test"):
+                self.assertEqual(types.access.evaluation_url("instance", variables, origin), original)
+
     def test_form_properties_and_validation_accept_any_prefix(self):
         xml = f'''<b:userTask xmlns:b="{types.NS['bpmn']}" xmlns:e="{types.NS['fipu']}" id="application">
           <b:documentation>Application</b:documentation><b:extensionElements><e:formData>

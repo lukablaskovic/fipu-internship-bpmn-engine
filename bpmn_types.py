@@ -139,6 +139,8 @@ class UserTask(Task):
             self.documentation = d.text
 
     def run(self, state, user_input):
+        if self._id == "alociranje_profesor":
+            state["_evaluation_origin"] = user_input.get("_evaluation_origin")
         for k, v in user_input.items():
             if k in self.form_fields:
                 state[k] = v
@@ -275,7 +277,7 @@ class ServiceTask(Task):
             if self.datasource_id == "baserow":
                 options = {"headers": {"X-Workflow-Token": access.service_token()}, "allow_redirects": False}
             if self.datasource_id == "emailjs" and "evaluacija_url" in data:
-                data["evaluacija_url"] = access.evaluation_url(instance_id, variables)
+                data["evaluacija_url"] = access.evaluation_url(instance_id, variables, variables.get("_evaluation_origin"))
             if self.operation_key and self.datasource_id in {"baserow", "pdf"}:
                 options.setdefault("headers", {})["Idempotency-Key"] = self.operation_key
             response = call_function(

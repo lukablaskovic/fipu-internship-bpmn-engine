@@ -3,6 +3,7 @@ import asyncio
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 import time
 import aiohttp
@@ -32,10 +33,16 @@ def evaluation_token(instance_id, variables, expires):
     return signature(*fields)
 
 
-def evaluation_url(instance_id, variables):
+def evaluation_origin(origin):
+    if re.fullmatch(r"https?://(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]{1,5})?", origin or ""):
+        return origin
+    return env.SYSTEM_VARS["_frontend_url"]
+
+
+def evaluation_url(instance_id, variables, origin=None):
     expires = int(time.time()) + 14 * 86400
     token = evaluation_token(instance_id, variables, expires)
-    return f"{env.SYSTEM_VARS['_frontend_url']}/evaluacija/{instance_id}#{expires}.{token}"
+    return f"{evaluation_origin(origin)}/evaluacija/{instance_id}#{expires}.{token}"
 
 
 def valid_evaluation(token, instance):

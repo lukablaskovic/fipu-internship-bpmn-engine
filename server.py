@@ -294,6 +294,7 @@ async def submit_form(request, instance_id, task_id, post):
             require_pending()
             post.update(id_alokacija=allocation["id_alokacija"], Alocirani_zadatak=[instance.variables["id_zadatak"]])
     if task_id == "alociranje_profesor":
+        post["_evaluation_origin"] = access.evaluation_origin(request.headers.get("Origin"))
         for key in ("Student", "JMBAG"):
             if key in instance.variables:
                 post[key] = instance.variables[key]
@@ -543,7 +544,7 @@ async def coordinator_evaluation_link(request):
     model = get_model_for_instance(iid)
     if not model or access.EVALUATION not in [t._id for t in model.instances[iid].pending]:
         raise web.HTTPConflict(text="No pending evaluation")
-    return web.json_response({"url": access.evaluation_url(iid, model.instances[iid].variables)})
+    return web.json_response({"url": access.evaluation_url(iid, model.instances[iid].variables, request.headers.get("Origin"))})
 
 
 @routes.get("/evaluation/{instance_id}")
