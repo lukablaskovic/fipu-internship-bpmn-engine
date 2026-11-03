@@ -392,11 +392,19 @@ class Gateway(BpmnObject):
 
 @bpmn_tag("bpmn:parallelGateway")
 class ParallelGateway(Gateway):
-    def add_token(self):
-        self.incoming -= 1
+    def parse(self, element):
+        super().parse(element)
+        self.tokens = {flow.text.strip(): 0 for flow in element.findall("bpmn:incoming", NS)}
+
+    def add_token(self, flow_id):
+        self.tokens[flow_id] += 1
 
     def run(self):
-        return self.incoming == 0
+        if not self.tokens or not all(self.tokens.values()):
+            return False
+        for flow_id in self.tokens:
+            self.tokens[flow_id] -= 1
+        return True
 
 
 @bpmn_tag("bpmn:exclusiveGateway")

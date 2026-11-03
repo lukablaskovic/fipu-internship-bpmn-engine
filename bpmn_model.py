@@ -156,7 +156,8 @@ class BpmnInstance:
         self.timer_due = {}
         self.runner = None
         self.state = "initialized"
-        self.pending = deepcopy(self.model.process_pending[process])
+        self.elements = deepcopy(self.model.process_elements[process])
+        self.pending = [self.elements[node._id] for node in self.model.process_pending[process]]
         self.process = process
         self.completed_activity_ids = set()
         self.triggered_events = []
@@ -189,7 +190,22 @@ class BpmnInstance:
         log("\t  DONE: Result is", ok)
         return ok
 
+    def outgoing_flows(self, current, log):
+        selected = []
+        fallback = None
+        default = current.default if isinstance(current, ExclusiveGateway) else None
+        for sequence in self.model.flow.get(current._id, ()):
+            if sequence._id == default:
+                fallback = sequence
+                continue
+            if not sequence.condition or self.check_condition(self.variables, sequence.condition, log):
+                selected.append(sequence)
+            if isinstance(current, ExclusiveGateway) and selected:
+                break
+        return selected or ([fallback] if fallback else [])
+
     async def run_from_log(self, log):
+        self.elements = deepcopy(self.model.process_elements[self.process])
         self.completed_activity_ids.clear()
         self.triggered_events = []
         self.active_event = None
@@ -199,7 +215,7 @@ class BpmnInstance:
             elif l.get("activity_id") in self.model.elements:
                 pending_elements_list = []
                 for p in l.get("pending"):
-                    pending_elements_list.append(self.model.elements[p])
+                    pending_elements_list.append(self.elements[p])
                 self.pending = pending_elements_list
                 self.timer_due = {key: due for key, due in self.timer_due.items() if key in l["pending"] and key != l["activity_id"]}
                 for timer in self.pending:
@@ -209,7 +225,7 @@ class BpmnInstance:
                             stamp = datetime.fromisoformat(stamp)
                         self.timer_due[timer._id] = stamp.timestamp() + timer.seconds
                 self.variables.update(l.get("activity_variables"))
-                activity = self.model.elements[l["activity_id"]]
+                activity = self.elements[l["activity_id"]]
                 # Termination also clears pending on waiting gateways logged before the final event.
                 if isinstance(activity, ParallelGateway) and not self.pending and l is not log[-1]:
                     continue
@@ -219,6 +235,13 @@ class BpmnInstance:
                     and any(flow.target == activity._id for flow in self.model.flow.get(activity._id, ()))
                 ):
                     self.completed_activity_ids.add(activity._id)
+                    # Replay routing without repeating connector effects to rebuild partial joins.
+                    if isinstance(activity, ParallelGateway):
+                        activity.run()
+                    for sequence in self.outgoing_flows(activity, lambda *args: None):
+                        target = self.elements[sequence.target]
+                        if isinstance(target, ParallelGateway):
+                            target.add_token(sequence._id)
                 if isinstance(activity, IntermediateCatchEvent):
                     self.triggered_events.append(activity._id)
                     self.active_event = activity._id
@@ -244,7 +267,8 @@ class BpmnInstance:
         return self
 
     def apply_rollback(self, event):
-        self.pending = [deepcopy(self.model.elements[key]) for key in event["pending"]]
+        self.elements = deepcopy(self.model.process_elements[self.process])
+        self.pending = [self.elements[key] for key in event["pending"]]
         self.timer_due = {key: due for key, due in self.timer_due.items() if key in event["pending"]}
         self.variables["_evaluation_generation"] = event["activity_variables"]["generation"]
         self.active_event = None
@@ -283,8 +307,7 @@ class BpmnInstance:
 
         in_queue = self.in_queue
         # Take only elements of running process
-        elements = deepcopy(self.model.process_elements[self.process])
-        flow = deepcopy(self.model.flow)
+        elements = self.elements
         queue = deque()
 
         while len(self.pending) > 0:
@@ -364,32 +387,9 @@ class BpmnInstance:
                         outcome = current.outcome
                     break
 
-            default = current.default if isinstance(current, ExclusiveGateway) else None
-
             if can_continue:
-                next_tasks = []
-                if current._id in flow:
-                    default_fallback = None
-                    for sequence in flow[current._id]:
-                        if sequence._id == default:
-                            default_fallback = elements[sequence.target]
-                            continue
-
-                        if sequence.condition:
-                            if self.check_condition(
-                                self.variables, sequence.condition, log
-                            ):
-                                next_tasks.append(elements[sequence.target])
-                        else:
-                            next_tasks.append(elements[sequence.target])
-                        if isinstance(current, ExclusiveGateway) and next_tasks:
-                            break
-
-                    if not next_tasks and default_fallback:
-                        log("\t- going down default path...")
-                        next_tasks.append(default_fallback)
-
-                for next_task in next_tasks:
+                for sequence in self.outgoing_flows(current, log):
+                    next_task = elements[sequence.target]
                     if next_task not in self.pending:
                         self.pending.append(next_task)
                         if isinstance(next_task, TimerCatchEvent):
@@ -397,7 +397,7 @@ class BpmnInstance:
                         # log("-----> Adding", next_task)
                     # log("n", next_task)
                     if isinstance(next_task, ParallelGateway):
-                        next_task.add_token()
+                        next_task.add_token(sequence._id)
             # Insert finished events into DB
             for c in current_and_variables_dict:
                 # Add each current into DB

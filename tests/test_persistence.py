@@ -152,6 +152,37 @@ class PersistenceTests(unittest.TestCase):
             time.sleep(0.01)
         self.fail(f"Did not reach {task}/{state}: {body}")
 
+    def test_parallel_notification_loop_survives_partial_join_and_restart(self):
+        shutil.copy(ROOT / "tests/fixtures/parallel_loop.bpmn", self.directory / "models/correction.bpmn")
+        self.restart()
+        self.create()
+
+        def wait_at_join():
+            for _ in range(200):
+                status, body = self.request("GET", f"/instance/{self.instance_id}")
+                if status == 200 and set(body["pending"]) == {"notify_employer", "join"}:
+                    return
+                time.sleep(0.01)
+            self.fail(f"Did not wait for both notification branches: {body}")
+
+        for approved in ("no", "no", "yes"):
+            self.submit("application", {})
+            wait_at_join()
+            self.restart()
+            wait_at_join()
+            self.submit("notify_employer", {})
+            self.wait_for("review")
+            self.restart()
+            self.wait_for("review")
+            self.submit("review", {"approved": approved})
+            self.wait_for("diary" if approved == "yes" else "application")
+        self.submit("diary", {})
+        self.restart()
+        status, body = self.request("GET", f"/instance/{self.instance_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["state"], "finished")
+        self.assertEqual(body["pending"], [])
+
     def test_instance_keeps_definition_across_save_and_restart(self):
         self.create()
         first = self.instance_id

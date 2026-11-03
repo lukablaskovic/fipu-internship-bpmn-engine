@@ -156,6 +156,58 @@ class BranchingTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.runner, 1)
         await check({"start", "review", "stop", "end"})
 
+    async def test_parallel_gateway_consumes_one_token_from_each_incoming_flow(self):
+        model = engine.BpmnModel(str(ROOT / "tests/fixtures/parallel_loop.bpmn"))
+        gateway = model.elements["join"]
+        gateway.add_token("student_done")
+        gateway.add_token("student_done")
+        self.assertFalse(gateway.run())
+        gateway.add_token("employer_done")
+        self.assertTrue(gateway.run())
+        self.assertFalse(gateway.run())
+        gateway.add_token("employer_done")
+        self.assertTrue(gateway.run())
+        self.assertFalse(gateway.run())
+        self.assertEqual(gateway.incoming, 2)
+
+    async def test_parallel_loop_recovery_and_instance_isolation(self):
+        model = engine.BpmnModel(str(ROOT / "tests/fixtures/parallel_loop.bpmn"))
+        self.instance = await model.create_instance("loop", {})
+        other = await model.create_instance("other", {})
+        self.runner = asyncio.create_task(self.instance.run())
+        await asyncio.sleep(0)
+        for iteration in range(3):
+            self.instance.in_queue.put_nowait(engine.UserFormMessage("application"))
+            await asyncio.sleep(0)
+            self.assertEqual({task._id for task in self.instance.pending}, {"notify_employer", "join"})
+            self.assertFalse(other.elements["join"].run())
+            self.runner.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await self.runner
+            restored = await model.create_instance("loop", {})
+            await restored.run_from_log(self.records)
+            self.instance = restored
+            self.runner = asyncio.create_task(restored.run())
+            await asyncio.sleep(0)
+            self.assertEqual({task._id for task in restored.pending}, {"notify_employer", "join"})
+            restored.in_queue.put_nowait(engine.UserFormMessage("notify_employer"))
+            await asyncio.sleep(0)
+            self.assertEqual([task._id for task in restored.pending], ["review"])
+            self.assertEqual(sum(event["activity_id"] == "join" and event["pending"] == ["review"] for event in self.records), iteration + 1)
+            # Recovery must also work after both branches arrived but before the join ran.
+            ready = max(index for index, event in enumerate(self.records) if event["activity_id"] == "notify_employer")
+            checkpoint = await model.create_instance("ready", {})
+            await checkpoint.run_from_log(self.records[:ready + 1])
+            self.assertTrue(checkpoint.elements["join"].run())
+            self.assertFalse(checkpoint.elements["join"].run())
+            restored.in_queue.put_nowait(engine.UserFormMessage("review", {"approved": "yes" if iteration == 2 else "no"}))
+            await asyncio.sleep(0)
+            self.assertEqual([task._id for task in restored.pending], ["diary" if iteration == 2 else "application"])
+        self.instance.in_queue.put_nowait(engine.UserFormMessage("diary"))
+        await asyncio.wait_for(self.runner, 1)
+        self.assertEqual(self.instance.state, "finished")
+        self.assertEqual(model.elements["join"].incoming, 2)
+
     async def test_exclusive_gateway_selects_first_match_or_default_only(self):
         content = '''
           <bpmn:startEvent id="start"/>

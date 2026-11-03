@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:fipu="urn:fipu:bpmn:1">
+  <bpmn:process id="parallel_loop" name="Synthetic notification loop">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="application" />
+    <bpmn:parallelGateway id="split"><bpmn:incoming>submit</bpmn:incoming></bpmn:parallelGateway>
+    <bpmn:manualTask id="notify_student" />
+    <bpmn:userTask id="notify_employer" />
+    <bpmn:parallelGateway id="join"><bpmn:incoming>student_done</bpmn:incoming><bpmn:incoming>employer_done</bpmn:incoming></bpmn:parallelGateway>
+    <bpmn:userTask id="review">
+      <bpmn:extensionElements><fipu:formData><fipu:formField id="approved" type="string" /></fipu:formData></bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="decision" default="return" />
+    <bpmn:userTask id="diary" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="begin" sourceRef="start" targetRef="application" />
+    <bpmn:sequenceFlow id="submit" sourceRef="application" targetRef="split" />
+    <bpmn:sequenceFlow id="student" sourceRef="split" targetRef="notify_student" />
+    <bpmn:sequenceFlow id="employer" sourceRef="split" targetRef="notify_employer" />
+    <bpmn:sequenceFlow id="student_done" sourceRef="notify_student" targetRef="join" />
+    <bpmn:sequenceFlow id="employer_done" sourceRef="notify_employer" targetRef="join" />
+    <bpmn:sequenceFlow id="notified" sourceRef="join" targetRef="review" />
+    <bpmn:sequenceFlow id="evaluate" sourceRef="review" targetRef="decision" />
+    <bpmn:sequenceFlow id="return" sourceRef="decision" targetRef="application" />
+    <bpmn:sequenceFlow id="accept" sourceRef="decision" targetRef="diary"><bpmn:conditionExpression>approved:yes</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="finish" sourceRef="diary" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

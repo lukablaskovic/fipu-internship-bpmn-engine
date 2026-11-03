@@ -388,7 +388,7 @@ async def rollback_instance(request):
     if was_failed:
         instance.variables = {}
         await instance.run_from_log(saved)
-    # A new execution token needs fresh gateway counters, just as it would after restart.
+    # Rollback opens a new path; apply_rollback resets its gateway counters.
     if instance.runner and not instance.runner.done():
         instance.runner.cancel()
     instance.apply_rollback(event)
