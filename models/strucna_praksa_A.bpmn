@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:fipu="urn:fipu:bpmn:1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1nk7pui" targetNamespace="urn:fipu:praksa" exporter="Praksa BPMN Studio" exporterVersion="0.1.0" processVersion="6">
+<bpmn:definitions xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:fipu="urn:fipu:bpmn:1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1nk7pui" targetNamespace="urn:fipu:praksa" exporter="Praksa BPMN Studio" exporterVersion="0.1.0" processVersion="8">
   <bpmn:collaboration id="Collaboration_0ojchsi">
     <bpmn:participant id="sustav_pool" name="Provođenje prakse (model A)" processRef="Process_0or099w"/>
   </bpmn:collaboration>
@@ -20,7 +20,7 @@
 
 
         <bpmn:flowNodeRef>end_event_student</bpmn:flowNodeRef>
-      <bpmn:flowNodeRef>start_event_student</bpmn:flowNodeRef><bpmn:flowNodeRef>odustajanje_od_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>obavjestavanje_studenta_nakon_ponistavanja_email</bpmn:flowNodeRef><bpmn:flowNodeRef>odabiranje_zadatka_student</bpmn:flowNodeRef><bpmn:flowNodeRef>ispunjavanje_prijavnice_student</bpmn:flowNodeRef><bpmn:flowNodeRef>azuriranje_podataka_profesor</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_pocetak_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>end_event_odustajanje</bpmn:flowNodeRef><bpmn:flowNodeRef>predavanje_dnevnika_student</bpmn:flowNodeRef><bpmn:flowNodeRef>evidentiranje_odustajanja</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:flowNodeRef>start_event_student</bpmn:flowNodeRef><bpmn:flowNodeRef>obavjestavanje_studenta_nakon_ponistavanja_email</bpmn:flowNodeRef><bpmn:flowNodeRef>odabiranje_zadatka_student</bpmn:flowNodeRef><bpmn:flowNodeRef>ispunjavanje_prijavnice_student</bpmn:flowNodeRef><bpmn:flowNodeRef>azuriranje_podataka_profesor</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_pocetak_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>end_event_odustajanje</bpmn:flowNodeRef><bpmn:flowNodeRef>evidentiranje_odustajanja</bpmn:flowNodeRef><bpmn:flowNodeRef>odustajanje_od_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>predavanje_dnevnika_student</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="profesor_lane" name="Profesor">
 
         <bpmn:flowNodeRef>alociranje_profesor</bpmn:flowNodeRef>
@@ -667,7 +667,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
         <dc:Bounds x="1870" y="515" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_176843s_di" bpmnElement="predavanje_dnevnika_student">
-        <dc:Bounds x="2070" y="300" width="100" height="80"/>
+        <dc:Bounds x="2040" y="300" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_02sqerr_di" bpmnElement="spremanje_dnevnika">
         <dc:Bounds x="2170" y="550" width="100" height="80"/>
@@ -788,12 +788,12 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
 
 
 
-      <di:waypoint x="1920" y="540"/><di:waypoint x="1990" y="540"/><di:waypoint x="1990" y="340"/><di:waypoint x="2070" y="340"/></bpmndi:BPMNEdge>
+      <di:waypoint x="1920" y="540"/><di:waypoint x="1990" y="540"/><di:waypoint x="1990" y="340"/><di:waypoint x="2040" y="340"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1btfl5a_di" bpmnElement="Flow_1btfl5a">
-        <di:waypoint x="2120" y="380"/>
-        <di:waypoint x="2120" y="590"/>
-        <di:waypoint x="2170" y="590"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="2090" y="380"/><di:waypoint x="2090" y="590"/><di:waypoint x="2170" y="590"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_0nepg4p_di" bpmnElement="Flow_0nepg4p">
         <di:waypoint x="2270" y="590"/>
         <di:waypoint x="2300" y="590"/>

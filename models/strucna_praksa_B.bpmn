@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:fipu="urn:fipu:bpmn:1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" id="Definitions_1nk7pui" targetNamespace="urn:fipu:praksa" exporter="Praksa BPMN Studio" exporterVersion="0.1.0">
+<bpmn:definitions xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:fipu="urn:fipu:bpmn:1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1nk7pui" targetNamespace="urn:fipu:praksa" exporter="Praksa BPMN Studio" exporterVersion="0.1.0" processVersion="4">
   <bpmn:collaboration id="Collaboration_0ojchsi">
     <bpmn:participant id="sustav_pool" name="Provođenje prakse (Model B)" processRef="Process_0or099w"/>
   </bpmn:collaboration>
@@ -7,34 +7,34 @@
     <bpmn:laneSet id="LaneSet_00d2bp4">
       <bpmn:lane id="poslodavac_lane" name="Poslodavac">
         <bpmn:extensionElements/>
-        <bpmn:flowNodeRef>model_b_dogovor_poslodavac</bpmn:flowNodeRef>
-      <bpmn:flowNodeRef>end_event_dogovor_poslodavac</bpmn:flowNodeRef></bpmn:lane>
+        
+      <bpmn:flowNodeRef>model_b_dogovor_poslodavac</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="student_lane" name="Student">
         <bpmn:flowNodeRef>predavanje_dnevnika_student</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>end_event_student</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>start_event_student</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>ispunjavanje_prijavnice_student</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Gateway_1865qr0</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>model_b_direktna_prijava_student</bpmn:flowNodeRef>
+        
+        
+        
+        
 
-      <bpmn:flowNodeRef>odustajanje_od_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>evidentiranje_odustajanja</bpmn:flowNodeRef><bpmn:flowNodeRef>end_event_odustajanje</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:flowNodeRef>start_event_student</bpmn:flowNodeRef><bpmn:flowNodeRef>ispunjavanje_prijavnice_student</bpmn:flowNodeRef><bpmn:flowNodeRef>azuriranje_podataka_profesor</bpmn:flowNodeRef><bpmn:flowNodeRef>model_b_direktna_prijava_student</bpmn:flowNodeRef><bpmn:flowNodeRef>evidentiranje_odustajanja</bpmn:flowNodeRef><bpmn:flowNodeRef>end_event_odustajanje</bpmn:flowNodeRef><bpmn:flowNodeRef>odustajanje_od_prakse</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_1865qr0</bpmn:flowNodeRef></bpmn:lane>
       <bpmn:lane id="profesor_lane" name="Profesor">
         <bpmn:flowNodeRef>spremanje_dnevnika</bpmn:flowNodeRef>
         <bpmn:flowNodeRef>upis_ocjene</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>slanje_potvrde_student_email</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>azuriranje_podataka_profesor</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>kreiranje_potvrde_profesor</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Gateway_1b8kjb9</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>slanje_potvrde_mentor_email</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>Gateway_0q2wy8q</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>uzimanje_podataka_o_poslodavcu_student</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>model_b_dogovor_profesor</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>model_b_odobrenje_zadatka</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>obavjestavanje_studenta_nakon_alokacije</bpmn:flowNodeRef>
-        <bpmn:flowNodeRef>spremanje_zahtjeva_prihvacanje</bpmn:flowNodeRef>
-      </bpmn:lane>
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+      <bpmn:flowNodeRef>slanje_potvrde_student_email</bpmn:flowNodeRef><bpmn:flowNodeRef>kreiranje_potvrde_profesor</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_1b8kjb9</bpmn:flowNodeRef><bpmn:flowNodeRef>slanje_potvrde_mentor_email</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_0q2wy8q</bpmn:flowNodeRef><bpmn:flowNodeRef>uzimanje_podataka_o_poslodavcu_student</bpmn:flowNodeRef><bpmn:flowNodeRef>model_b_odobrenje_zadatka</bpmn:flowNodeRef><bpmn:flowNodeRef>obavjestavanje_studenta_nakon_alokacije</bpmn:flowNodeRef><bpmn:flowNodeRef>spremanje_zahtjeva_prihvacanje</bpmn:flowNodeRef><bpmn:flowNodeRef>parallelGateway_1</bpmn:flowNodeRef><bpmn:flowNodeRef>model_b_dogovor_profesor</bpmn:flowNodeRef></bpmn:lane>
     </bpmn:laneSet>
-    <bpmn:userTask id="predavanje_dnevnika_student" name="Predavanje dnevnika prakse">
+    <bpmn:userTask id="predavanje_dnevnika_student" name="Predaja dnevnika prakse i ispunjene prijavnice">
       <bpmn:extensionElements>
         <fipu:formData>
           <fipu:formField id="nastavak_radnog_odnosa" label="Označi ako nastavljaš i dalje raditi u tvrtci ili ćeš ubrzo početi raditi honorarno" type="boolean"/>
@@ -45,7 +45,7 @@
       <bpmn:incoming>Flow_03i13r1</bpmn:incoming>
       <bpmn:outgoing>Flow_1btfl5a</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:serviceTask id="spremanje_dnevnika" name="Ažuriranje podataka u baserow">
+    <bpmn:serviceTask id="spremanje_dnevnika" name="Ažuriranje statusa prakse">
       <bpmn:extensionElements>
         <fipu:connector>
           <fipu:inputOutput>
@@ -87,13 +87,13 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
     <bpmn:sequenceFlow id="Flow_1bua3l7" sourceRef="azuriranje_podataka_profesor" targetRef="kreiranje_potvrde_profesor"/>
     <bpmn:sequenceFlow id="Flow_1g3f3ei" sourceRef="kreiranje_potvrde_profesor" targetRef="Gateway_1b8kjb9"/>
     <bpmn:sequenceFlow id="Flow_0rr5pyh" sourceRef="Gateway_1b8kjb9" targetRef="slanje_potvrde_student_email"/>
-    <bpmn:sequenceFlow id="Flow_1jgq625" sourceRef="slanje_potvrde_student_email" targetRef="slanje_potvrde_mentor_email"/>
+    
     <bpmn:sequenceFlow id="Flow_05znxzo" sourceRef="slanje_potvrde_mentor_email" targetRef="Gateway_0q2wy8q"/>
     <bpmn:sequenceFlow id="Flow_03i13r1" sourceRef="Gateway_0q2wy8q" targetRef="predavanje_dnevnika_student"/>
     <bpmn:sequenceFlow id="Flow_1btfl5a" sourceRef="predavanje_dnevnika_student" targetRef="spremanje_dnevnika"/>
     <bpmn:sequenceFlow id="Flow_0nepg4p" sourceRef="spremanje_dnevnika" targetRef="upis_ocjene"/>
     <bpmn:sequenceFlow id="Flow_15bhsc5" sourceRef="upis_ocjene" targetRef="end_event_student"/>
-    <bpmn:startEvent id="start_event_student" name="Student upisuje praksu">
+    <bpmn:startEvent id="start_event_student" name="Početak prijave prakse">
       <bpmn:outgoing>Flow_1tjtkv4</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:sendTask id="slanje_potvrde_student_email" name="Slanje potvrde o obavljenoj praksi studentu (email)">
@@ -119,8 +119,8 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
         </fipu:inputOutput>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_0rr5pyh</bpmn:incoming>
-      <bpmn:outgoing>Flow_1jgq625</bpmn:outgoing>
-    </bpmn:sendTask>
+      
+    <bpmn:outgoing>Flow_11</bpmn:outgoing></bpmn:sendTask>
     <bpmn:userTask id="ispunjavanje_prijavnice_student" name="Ispunjavanje prijavnice">
       <bpmn:extensionElements>
         <fipu:formData>
@@ -141,7 +141,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
       <bpmn:incoming>Flow_13ar6jz</bpmn:incoming>
       <bpmn:outgoing>Flow_1l8y47v</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:serviceTask id="azuriranje_podataka_profesor" name="Ažuriranje podataka u baserow">
+    <bpmn:serviceTask id="azuriranje_podataka_profesor" name="Spremanje prijavnice">
       <bpmn:extensionElements>
         <fipu:connector>
           <fipu:inputOutput>
@@ -180,7 +180,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
       <bpmn:incoming>Flow_1l8y47v</bpmn:incoming>
       <bpmn:outgoing>Flow_1bua3l7</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="kreiranje_potvrde_profesor" name="Kreiranje potvrde">
+    <bpmn:serviceTask id="kreiranje_potvrde_profesor" name="Izrada potvrde">
       <bpmn:extensionElements>
         <fipu:connector>
           <fipu:inputOutput>
@@ -212,7 +212,7 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
     <bpmn:parallelGateway id="Gateway_1b8kjb9">
       <bpmn:incoming>Flow_1g3f3ei</bpmn:incoming>
       <bpmn:outgoing>Flow_0rr5pyh</bpmn:outgoing>
-    </bpmn:parallelGateway>
+    <bpmn:outgoing>Flow_10</bpmn:outgoing></bpmn:parallelGateway>
     <bpmn:sendTask id="slanje_potvrde_mentor_email" name="Slanje potvrde o obavljenoj praksi mentoru (email)">
       <bpmn:extensionElements>
         <fipu:connector>
@@ -236,19 +236,19 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
           <fipu:inputParameter name="student_prezime">${student_prezime}</fipu:inputParameter>
         </fipu:inputOutput>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_1jgq625</bpmn:incoming>
-      <bpmn:outgoing>Flow_05znxzo</bpmn:outgoing>
+      
+      <bpmn:incoming>Flow_10</bpmn:incoming><bpmn:outgoing>Flow_05znxzo</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:parallelGateway id="Gateway_0q2wy8q">
       <bpmn:incoming>Flow_05znxzo</bpmn:incoming>
-      <bpmn:outgoing>Flow_03i13r1</bpmn:outgoing>
+      <bpmn:incoming>Flow_11</bpmn:incoming><bpmn:outgoing>Flow_03i13r1</bpmn:outgoing>
     </bpmn:parallelGateway>
     <bpmn:sequenceFlow id="Flow_1msjihr" sourceRef="model_b_odobrenje_zadatka" targetRef="uzimanje_podataka_o_poslodavcu_student"/>
     <bpmn:sequenceFlow id="Flow_0jgnrnc" sourceRef="uzimanje_podataka_o_poslodavcu_student" targetRef="model_b_direktna_prijava_student"/>
-    <bpmn:sequenceFlow id="Flow_0q8jyt1" sourceRef="model_b_dogovor_profesor" targetRef="model_b_odobrenje_zadatka"/>
+    
     <bpmn:sequenceFlow id="Flow_0gjgrzo" sourceRef="model_b_direktna_prijava_student" targetRef="spremanje_zahtjeva_prihvacanje"/>
     <bpmn:sequenceFlow id="Flow_13ar6jz" sourceRef="obavjestavanje_studenta_nakon_alokacije" targetRef="ispunjavanje_prijavnice_student"/>
-    <bpmn:serviceTask id="uzimanje_podataka_o_poslodavcu_student" name="Dohvat podataka o poslodavcu">
+    <bpmn:serviceTask id="uzimanje_podataka_o_poslodavcu_student" name="Dohvaćanje podataka o poslodavcu">
       <bpmn:extensionElements>
         <fipu:connector>
           <fipu:inputOutput>
@@ -282,12 +282,12 @@ https://www.isvu.hr/nastavnickiportal/hr/prijava</bpmn:documentation>
     <bpmn:manualTask id="model_b_dogovor_profesor" name="Dogovor s profesorom">
       <bpmn:documentation>Studentu je u dogovoru s voditeljom prakse priznat zadatak za izvođenje prakse ili je praksu već obavio i rezultate prezentirao nastavniku.</bpmn:documentation>
       <bpmn:incoming>Flow_04xr50r</bpmn:incoming>
-      <bpmn:outgoing>Flow_0q8jyt1</bpmn:outgoing>
-    </bpmn:manualTask>
+      
+    <bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:manualTask>
     <bpmn:manualTask id="model_b_dogovor_poslodavac" name="Dogovor s poslodavcem">
       <bpmn:documentation>Studentu je u dogovoru s voditeljom prakse priznat zadatak za izvođenje prakse ili je praksu već obavio i rezultate prezentirao nastavniku.</bpmn:documentation>
       <bpmn:incoming>Flow_121jstx</bpmn:incoming>
-    <bpmn:outgoing>Flow_dogovor_poslodavac_zavrsen</bpmn:outgoing></bpmn:manualTask>
+    <bpmn:outgoing>Flow_2</bpmn:outgoing></bpmn:manualTask>
     <bpmn:userTask id="model_b_odobrenje_zadatka" name="Odobrenje prijavljenog zadatka">
       <bpmn:documentation>Jeste li odobrili zadatak namijenjen ovom studentu?
 Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
@@ -297,8 +297,8 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
           <fipu:formField id="id_zadatak" label="Unesite točan ID zadatka koji odobravate studentu (format: Zadatak x - nazivOrganizacije)" type="input"/>
         </fipu:formData>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_0q8jyt1</bpmn:incoming>
-      <bpmn:outgoing>Flow_1msjihr</bpmn:outgoing>
+      
+      <bpmn:incoming>Flow_3</bpmn:incoming><bpmn:outgoing>Flow_1msjihr</bpmn:outgoing>
     </bpmn:userTask>
     <bpmn:sendTask id="obavjestavanje_studenta_nakon_alokacije" name="Obavještavanje studenta nakon alociranja (email)">
       <bpmn:extensionElements>
@@ -325,7 +325,7 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
       <bpmn:outgoing>Flow_13ar6jz</bpmn:outgoing>
     </bpmn:sendTask>
     <bpmn:sequenceFlow id="Flow_0azr5k2" sourceRef="spremanje_zahtjeva_prihvacanje" targetRef="obavjestavanje_studenta_nakon_alokacije"/>
-    <bpmn:serviceTask id="spremanje_zahtjeva_prihvacanje" name="Ažuriraj status zahtjeva">
+    <bpmn:serviceTask id="spremanje_zahtjeva_prihvacanje" name="Ažuriranje statusa prakse">
       <bpmn:documentation>spremanje_zahtjeva_prihvacanje</bpmn:documentation>
       <bpmn:extensionElements>
         <fipu:connector>
@@ -345,7 +345,7 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
       <bpmn:incoming>Flow_0gjgrzo</bpmn:incoming>
       <bpmn:outgoing>Flow_0azr5k2</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:userTask id="model_b_direktna_prijava_student" name="Direktna prijava na zadatak">
+    <bpmn:userTask id="model_b_direktna_prijava_student" name="Izravna prijava na zadatak">
       <bpmn:documentation>Student se mora prijaviti na zadatak koji mu je odobren.</bpmn:documentation>
       <bpmn:extensionElements>
         <fipu:formData>
@@ -370,7 +370,7 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
       <bpmn:outgoing>Flow_0gjgrzo</bpmn:outgoing>
     </bpmn:userTask>
 
-  <bpmn:endEvent id="end_event_dogovor_poslodavac" name="Dogovor s poslodavcem završen"><bpmn:incoming>Flow_dogovor_poslodavac_zavrsen</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_dogovor_poslodavac_zavrsen" sourceRef="model_b_dogovor_poslodavac" targetRef="end_event_dogovor_poslodavac" name=""/><bpmn:intermediateCatchEvent id="odustajanje_od_prakse" name="Odustajanje od prakse"><bpmn:messageEventDefinition/><bpmn:incoming>Flow_cekanje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_evidentiranje_odustajanja</bpmn:outgoing></bpmn:intermediateCatchEvent><bpmn:serviceTask id="evidentiranje_odustajanja" name="Evidentiraj odustajanje"><bpmn:extensionElements><fipu:inputOutput><fipu:inputParameter name="id_instance"/></fipu:inputOutput><fipu:connector><fipu:connectorId>baserow</fipu:connectorId><fipu:inputOutput><fipu:inputParameter name="method">POST</fipu:inputParameter><fipu:inputParameter name="url">/api/odustajanje</fipu:inputParameter><fipu:inputParameter name="url_parameter"><fipu:map/></fipu:inputParameter></fipu:inputOutput></fipu:connector></bpmn:extensionElements><bpmn:incoming>Flow_evidentiranje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_kraj_odustajanja</bpmn:outgoing></bpmn:serviceTask><bpmn:endEvent id="end_event_odustajanje" name="Student odustao" fipu:outcome="cancelled"><bpmn:terminateEventDefinition/><bpmn:incoming>Flow_kraj_odustajanja</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_cekanje_odustajanja" sourceRef="Gateway_1865qr0" targetRef="odustajanje_od_prakse" name=""/><bpmn:sequenceFlow id="Flow_evidentiranje_odustajanja" sourceRef="odustajanje_od_prakse" targetRef="evidentiranje_odustajanja" name=""/><bpmn:sequenceFlow id="Flow_kraj_odustajanja" sourceRef="evidentiranje_odustajanja" targetRef="end_event_odustajanje" name=""/></bpmn:process>
+  <bpmn:intermediateCatchEvent id="odustajanje_od_prakse" name="Odustajanje od prakse"><bpmn:documentation/><bpmn:incoming>Flow_cekanje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_evidentiranje_odustajanja</bpmn:outgoing><bpmn:messageEventDefinition/></bpmn:intermediateCatchEvent><bpmn:serviceTask id="evidentiranje_odustajanja" name="Prekidanje procesa prakse"><bpmn:extensionElements><fipu:inputOutput><fipu:inputParameter name="id_instance"/></fipu:inputOutput><fipu:connector><fipu:connectorId>baserow</fipu:connectorId><fipu:inputOutput><fipu:inputParameter name="method">POST</fipu:inputParameter><fipu:inputParameter name="url">/api/odustajanje</fipu:inputParameter><fipu:inputParameter name="url_parameter"><fipu:map/></fipu:inputParameter></fipu:inputOutput></fipu:connector></bpmn:extensionElements><bpmn:incoming>Flow_evidentiranje_odustajanja</bpmn:incoming><bpmn:outgoing>Flow_kraj_odustajanja</bpmn:outgoing></bpmn:serviceTask><bpmn:endEvent id="end_event_odustajanje" name="Student odustao od prakse" fipu:outcome="cancelled"><bpmn:terminateEventDefinition/><bpmn:incoming>Flow_kraj_odustajanja</bpmn:incoming></bpmn:endEvent><bpmn:sequenceFlow id="Flow_cekanje_odustajanja" sourceRef="Gateway_1865qr0" targetRef="odustajanje_od_prakse" name=""/><bpmn:sequenceFlow id="Flow_evidentiranje_odustajanja" sourceRef="odustajanje_od_prakse" targetRef="evidentiranje_odustajanja" name=""/><bpmn:sequenceFlow id="Flow_kraj_odustajanja" sourceRef="evidentiranje_odustajanja" targetRef="end_event_odustajanje" name=""/><bpmn:sequenceFlow id="Flow_10" sourceRef="Gateway_1b8kjb9" targetRef="slanje_potvrde_mentor_email" name=""/><bpmn:sequenceFlow id="Flow_11" sourceRef="slanje_potvrde_student_email" targetRef="Gateway_0q2wy8q" name=""/><bpmn:parallelGateway id="parallelGateway_1" name="Paralelno grananje"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:incoming>Flow_2</bpmn:incoming><bpmn:outgoing>Flow_3</bpmn:outgoing></bpmn:parallelGateway><bpmn:sequenceFlow id="Flow_1" sourceRef="model_b_dogovor_profesor" targetRef="parallelGateway_1" name=""/><bpmn:sequenceFlow id="Flow_2" sourceRef="model_b_dogovor_poslodavac" targetRef="parallelGateway_1" name=""/><bpmn:sequenceFlow id="Flow_3" sourceRef="parallelGateway_1" targetRef="model_b_odobrenje_zadatka" name=""/></bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_0ojchsi">
       <bpmndi:BPMNShape id="Participant_1yqxmat_di" bpmnElement="sustav_pool" isHorizontal="true">
@@ -402,99 +402,96 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
       <bpmndi:BPMNShape id="Event_0f6fpdt_di" bpmnElement="end_event_student" bioc:stroke="#000" bioc:fill="#fff">
         <dc:Bounds x="2332" y="322" width="36" height="36"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2309" y="303" width="82" height="14"/>
+          <dc:Bounds x="2308" y="297" width="82" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Event_1tv7kmn_di" bpmnElement="start_event_student" bioc:stroke="#000" bioc:fill="#fff">
-        <dc:Bounds x="232" y="332" width="36" height="36"/>
+        <dc:Bounds x="230" y="320" width="36" height="36"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="212" y="376" width="76" height="27"/>
+          <dc:Bounds x="210" y="364" width="76" height="27"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_1k8zc7b_di" bpmnElement="slanje_potvrde_student_email">
-        <dc:Bounds x="1690" y="450" width="100" height="80"/>
+        <dc:Bounds x="1730" y="450" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_10qy04a_di" bpmnElement="ispunjavanje_prijavnice_student">
-        <dc:Bounds x="1430" y="310" width="100" height="80"/>
+        <dc:Bounds x="1240" y="290" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_033wzw3_di" bpmnElement="azuriranje_podataka_profesor">
-        <dc:Bounds x="1430" y="460" width="100" height="80"/>
+        <dc:Bounds x="1510" y="290" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_0anpsxe_di" bpmnElement="kreiranje_potvrde_profesor">
-        <dc:Bounds x="1430" y="560" width="100" height="80"/>
+        <dc:Bounds x="1510" y="500" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_0bcvwef_di" bpmnElement="Gateway_1b8kjb9">
-        <dc:Bounds x="1605" y="575" width="50" height="50"/>
+        <dc:Bounds x="1640" y="515" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_1ujwdyd" bpmnElement="slanje_potvrde_mentor_email">
-        <dc:Bounds x="1830" y="450" width="100" height="80"/>
+        <dc:Bounds x="1730" y="550" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_1p6bnhj_di" bpmnElement="Gateway_0q2wy8q">
-        <dc:Bounds x="1995" y="465" width="50" height="50"/>
+        <dc:Bounds x="1870" y="515" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_0kpu7yu" bpmnElement="uzimanje_podataka_o_poslodavcu_student">
-        <dc:Bounds x="950" y="510" width="100" height="80"/>
+        <dc:Bounds x="965" y="500" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_1w1yza0_di" bpmnElement="Gateway_1865qr0">
-        <dc:Bounds x="335" y="325" width="50" height="50"/>
+        <dc:Bounds x="315" y="313" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_1bfmhrq" bpmnElement="model_b_dogovor_profesor">
-        <dc:Bounds x="460" y="510" width="100" height="80"/>
+        <dc:Bounds x="290" y="500" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_1ny1xop" bpmnElement="model_b_dogovor_poslodavac">
-        <dc:Bounds x="460" y="110" width="100" height="80"/>
+        <dc:Bounds x="290" y="110" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_1d4nyrm_di" bpmnElement="model_b_odobrenje_zadatka">
-        <dc:Bounds x="710" y="510" width="100" height="80"/>
+        <dc:Bounds x="660" y="500" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_138e5fa" bpmnElement="obavjestavanje_studenta_nakon_alokacije">
-        <dc:Bounds x="1270" y="510" width="100" height="80"/>
+        <dc:Bounds x="1240" y="500" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_1oya13s" bpmnElement="spremanje_zahtjeva_prihvacanje">
-        <dc:Bounds x="1110" y="510" width="100" height="80"/>
+        <dc:Bounds x="1105" y="500" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_11cml9m_di" bpmnElement="model_b_direktna_prijava_student">
-        <dc:Bounds x="1110" y="310" width="100" height="80"/>
+        <dc:Bounds x="965" y="290" width="100" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
 
       <bpmndi:BPMNEdge id="Flow_1l8y47v_di" bpmnElement="Flow_1l8y47v">
-        <di:waypoint x="1480" y="390"/>
-        <di:waypoint x="1480" y="460"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="1340" y="330"/><di:waypoint x="1510" y="330"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1bua3l7_di" bpmnElement="Flow_1bua3l7">
-        <di:waypoint x="1480" y="540"/>
-        <di:waypoint x="1480" y="560"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="1560" y="370"/><di:waypoint x="1560" y="500"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1g3f3ei_di" bpmnElement="Flow_1g3f3ei">
-        <di:waypoint x="1530" y="600"/>
-        <di:waypoint x="1605" y="600"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="1610" y="540"/><di:waypoint x="1640" y="540"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_0rr5pyh_di" bpmnElement="Flow_0rr5pyh">
-        <di:waypoint x="1630" y="575"/>
-        <di:waypoint x="1630" y="490"/>
-        <di:waypoint x="1690" y="490"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_1jgq625_di" bpmnElement="Flow_1jgq625">
-        <di:waypoint x="1790" y="490"/>
-        <di:waypoint x="1830" y="490"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="1665" y="515"/><di:waypoint x="1665" y="490"/><di:waypoint x="1730" y="490"/></bpmndi:BPMNEdge>
+      
       <bpmndi:BPMNEdge id="Flow_05znxzo_di" bpmnElement="Flow_05znxzo">
-        <di:waypoint x="1930" y="490"/>
-        <di:waypoint x="1995" y="490"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="1830" y="590"/><di:waypoint x="1895" y="590"/><di:waypoint x="1895" y="565"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_03i13r1_di" bpmnElement="Flow_03i13r1">
-        <di:waypoint x="2020" y="465"/>
-        <di:waypoint x="2020" y="340"/>
-        <di:waypoint x="2070" y="340"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="1920" y="540"/><di:waypoint x="1990" y="540"/><di:waypoint x="1990" y="340"/><di:waypoint x="2070" y="340"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1btfl5a_di" bpmnElement="Flow_1btfl5a">
         <di:waypoint x="2120" y="380"/>
         <di:waypoint x="2120" y="590"/>
@@ -509,45 +506,42 @@ Prijavljene zadatke možete pregledati u tabu Zadaci.</bpmn:documentation>
         <di:waypoint x="2350" y="358"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1msjihr_di" bpmnElement="Flow_1msjihr">
-        <di:waypoint x="810" y="550"/>
-        <di:waypoint x="950" y="550"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="760" y="540"/><di:waypoint x="965" y="540"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_0jgnrnc_di" bpmnElement="Flow_0jgnrnc">
-        <di:waypoint x="1000" y="510"/>
-        <di:waypoint x="1000" y="350"/>
-        <di:waypoint x="1110" y="350"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_0q8jyt1_di" bpmnElement="Flow_0q8jyt1">
-        <di:waypoint x="560" y="550"/>
-        <di:waypoint x="710" y="550"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="1015" y="500"/><di:waypoint x="1015" y="370"/></bpmndi:BPMNEdge>
+      
       <bpmndi:BPMNEdge id="Flow_0gjgrzo_di" bpmnElement="Flow_0gjgrzo">
-        <di:waypoint x="1160" y="390"/>
-        <di:waypoint x="1160" y="510"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="1065" y="330"/><di:waypoint x="1155" y="330"/><di:waypoint x="1155" y="500"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_13ar6jz_di" bpmnElement="Flow_13ar6jz">
-        <di:waypoint x="1320" y="510"/>
-        <di:waypoint x="1320" y="350"/>
-        <di:waypoint x="1430" y="350"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="1290" y="500"/><di:waypoint x="1290" y="370"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1tjtkv4_di" bpmnElement="Flow_1tjtkv4">
-        <di:waypoint x="268" y="350"/>
-        <di:waypoint x="335" y="350"/>
-      </bpmndi:BPMNEdge>
+        
+        
+      <di:waypoint x="266" y="338"/><di:waypoint x="315" y="338"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_04xr50r_di" bpmnElement="Flow_04xr50r">
-        <di:waypoint x="360" y="375"/>
-        <di:waypoint x="360" y="550"/>
-        <di:waypoint x="460" y="550"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="340" y="363"/><di:waypoint x="340" y="540"/><di:waypoint x="290" y="540"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_121jstx_di" bpmnElement="Flow_121jstx">
-        <di:waypoint x="360" y="325"/>
-        <di:waypoint x="360" y="150"/>
-        <di:waypoint x="460" y="150"/>
-      </bpmndi:BPMNEdge>
+        
+        
+        
+      <di:waypoint x="340" y="313"/><di:waypoint x="340" y="150"/><di:waypoint x="290" y="150"/></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_0azr5k2_di" bpmnElement="Flow_0azr5k2">
-        <di:waypoint x="1210" y="550"/>
-        <di:waypoint x="1270" y="550"/>
-      </bpmndi:BPMNEdge>
-    <bpmndi:BPMNShape id="end_event_dogovor_poslodavac_di" bpmnElement="end_event_dogovor_poslodavac"><dc:Bounds x="650" y="132" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_dogovor_poslodavac_zavrsen_di" bpmnElement="Flow_dogovor_poslodavac_zavrsen"><di:waypoint x="560" y="150"/><di:waypoint x="650" y="150"/></bpmndi:BPMNEdge><bpmndi:BPMNShape id="odustajanje_od_prakse_di" bpmnElement="odustajanje_od_prakse"><dc:Bounds x="620" y="312" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="evidentiranje_odustajanja_di" bpmnElement="evidentiranje_odustajanja"><dc:Bounds x="730" y="290" width="120" height="80"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="end_event_odustajanje_di" bpmnElement="end_event_odustajanje"><dc:Bounds x="930" y="312" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_cekanje_odustajanja_di" bpmnElement="Flow_cekanje_odustajanja"><di:waypoint x="360" y="325"/><di:waypoint x="360" y="270"/><di:waypoint x="638" y="270"/><di:waypoint x="638" y="312"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_evidentiranje_odustajanja_di" bpmnElement="Flow_evidentiranje_odustajanja"><di:waypoint x="656" y="330"/><di:waypoint x="730" y="330"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_kraj_odustajanja_di" bpmnElement="Flow_kraj_odustajanja"><di:waypoint x="850" y="330"/><di:waypoint x="930" y="330"/></bpmndi:BPMNEdge></bpmndi:BPMNPlane>
+        
+        
+      <di:waypoint x="1205" y="540"/><di:waypoint x="1240" y="540"/></bpmndi:BPMNEdge>
+    <bpmndi:BPMNShape id="odustajanje_od_prakse_di" bpmnElement="odustajanje_od_prakse"><dc:Bounds x="550" y="320" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="evidentiranje_odustajanja_di" bpmnElement="evidentiranje_odustajanja"><dc:Bounds x="650" y="298" width="120" height="80"/></bpmndi:BPMNShape><bpmndi:BPMNShape id="end_event_odustajanje_di" bpmnElement="end_event_odustajanje"><dc:Bounds x="850" y="320" width="36" height="36"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_cekanje_odustajanja_di" bpmnElement="Flow_cekanje_odustajanja"><di:waypoint x="365" y="338"/><di:waypoint x="480" y="338"/><di:waypoint x="480" y="338"/><di:waypoint x="550" y="338"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_evidentiranje_odustajanja_di" bpmnElement="Flow_evidentiranje_odustajanja"><di:waypoint x="586" y="338"/><di:waypoint x="656.75" y="338"/><di:waypoint x="656.75" y="338"/><di:waypoint x="650" y="338"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_kraj_odustajanja_di" bpmnElement="Flow_kraj_odustajanja"><di:waypoint x="770" y="338"/><di:waypoint x="810" y="338"/><di:waypoint x="810" y="338"/><di:waypoint x="850" y="338"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_10_di" bpmnElement="Flow_10"><di:waypoint x="1665" y="565"/><di:waypoint x="1665" y="590"/><di:waypoint x="1730" y="590"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11"><di:waypoint x="1830" y="490"/><di:waypoint x="1895" y="490"/><di:waypoint x="1895" y="515"/></bpmndi:BPMNEdge><bpmndi:BPMNShape id="parallelGateway_1_di" bpmnElement="parallelGateway_1"><dc:Bounds x="480" y="515" width="50" height="50"/></bpmndi:BPMNShape><bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="390" y="540"/><di:waypoint x="480" y="540"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="390" y="150"/><di:waypoint x="505" y="150"/><di:waypoint x="505" y="515"/></bpmndi:BPMNEdge><bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3"><di:waypoint x="530" y="540"/><di:waypoint x="660" y="540"/></bpmndi:BPMNEdge></bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>
